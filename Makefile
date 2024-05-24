@@ -1,5 +1,5 @@
 BUILD_DIR = .
-BIN = pgmodelgen
+BIN = pgmodelgen.exe
 
 .PHONY: build clean
 

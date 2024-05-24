@@ -32,3 +32,20 @@ func main() {
 	}
 	fmt.Println(parse)
 }
+
+type Catalog struct {
+	Schemas []Schema
+}
+
+type Schema struct {
+	Tables []Table
+}
+
+type Table struct {
+	Columns []Column
+}
+
+type Column struct {
+	Name string
+	Type string
+}
