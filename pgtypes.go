@@ -91,11 +91,15 @@ var (
 	}, Description: "time of day, including time zone"}
 	Timestamp = &PostgresType{Name: "timestamp [ (p) ] [ without time zone ]", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^timestamp" + optionally(numInBrackets) + optionally(withoutTimeZone) + "$"),
-	}, Description: "date and time (no time zone)"}
+	},
+		SimpleMatches: []string{"timestamp"},
+		Description:   "date and time (no time zone)"}
 	Timestamptz = &PostgresType{Name: "timestamp [ (p) ] with time zone", Aliases: "timestamptz", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^timestamp" + optionally(numInBrackets) + withTimeZone + "$"),
 		regexp.MustCompile("^timestamptz" + optionally(numInBrackets) + "$"),
-	}, Description: "date and time, including time zone"}
+	},
+		SimpleMatches: []string{"timestamptz"},
+		Description:   "date and time, including time zone"}
 )
 
 var pgTypes = []*PostgresType{
@@ -158,6 +162,7 @@ var patternMatches = lo.FlatMap(pgTypes, func(item *PostgresType, index int) []l
 })
 
 func MatchType(s string) *PostgresType {
+	s = strings.ToLower(s)
 	if t, ok := simpleMatches[s]; ok {
 		return t
 	}
