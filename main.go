@@ -5,6 +5,7 @@ import (
 	"fmt"
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"github.com/rs/zerolog/log"
+	"github.com/samber/lo"
 	"io"
 	"os"
 	"pgmodelgen/collections"
@@ -49,8 +50,6 @@ func main() {
 			}
 		}
 	}
-	t := MatchType("bigserial")
-	fmt.Println(t)
 	fmt.Println(parse)
 }
 
@@ -111,7 +110,7 @@ func (c *Compiler) CreateTable(stmt *pg_query.CreateStmt) error {
 			}
 		case *pg_query.Node_Constraint:
 			{
-				constraint, err := c.ParseConstraint(table, p)
+				constraint, err := c.ParseConstraint(table, p.Constraint)
 				if err != nil {
 					return err
 				}
@@ -125,7 +124,7 @@ func (c *Compiler) CreateTable(stmt *pg_query.CreateStmt) error {
 func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 	name := def.Colname
 	pgType := c.TypeFromNode(def.TypeName)
-	constraints, err := c.ParseConstraints(t, def.Constraints)
+	constraints, err := c.ParseConstraints(t, name, def.Constraints)
 	if err != nil {
 		return err
 	}
@@ -151,43 +150,73 @@ func (c *Compiler) TypeFromNode(tn *pg_query.TypeName) *PostgresType {
 	return MatchType(strings.Join(parts, "."))
 }
 
-func (c *Compiler) ParseConstraints(t *Table, constraints []*pg_query.Node) (Constraints, error) {
+func (c *Compiler) ParseConstraints(t *Table, colName string, constraints []*pg_query.Node) (Constraints, error) {
 	ret := make(Constraints, 0, len(constraints))
 	for _, n := range constraints {
 		v, ok := n.Node.(*pg_query.Node_Constraint)
 		if !ok {
 			panic("unknown how to parse node " + n.String())
 		}
-		con, err := c.ParseConstraint(t, v)
+		con, err := c.ParseConstraint(t, v.Constraint)
 		if err != nil {
 			return nil, err
+		}
+		if con.Type == ConstraintTypeForeignKey && con.Name == "" {
+			con.Name = t.Name + "_" + colName + "_fkey"
 		}
 		ret = append(ret, con)
 	}
 	return ret, nil
 }
 
-func (c *Compiler) ParseConstraint(t *Table, v *pg_query.Node_Constraint) (*Constraint, error) {
+func (c *Compiler) ParseConstraint(t *Table, v *pg_query.Constraint) (*Constraint, error) {
 
-	switch v.Constraint.Contype {
+	switch v.Contype {
 	case pg_query.ConstrType_CONSTR_PRIMARY:
 		{
-			return &Constraint{Type: ConstraintTypePrimary}, nil
+			name := v.Conname
+			if name == "" {
+				name = t.Name + "_" + "pkey"
+			}
+			return &Constraint{Name: name, Type: ConstraintTypePrimary}, nil
 		}
 	case pg_query.ConstrType_CONSTR_NOTNULL:
 		{
-			return &Constraint{Type: ConstraintTypeNotNull}, nil
+			return &Constraint{Name: "", Type: ConstraintTypeNotNull}, nil
 		}
 	case pg_query.ConstrType_CONSTR_DEFAULT:
 		{
-			return &Constraint{Type: ConstraintTypeDefault}, nil
+			return &Constraint{Name: "", Type: ConstraintTypeDefault}, nil
+		}
+	case pg_query.ConstrType_CONSTR_UNIQUE:
+		{
+			var constrainsCols []*Column
+			for _, colRef := range v.Keys {
+				colName := StringOrPanic(colRef)
+				col, ok := t.Columns.Get(colName)
+				if !ok {
+					return nil, fmt.Errorf("column %s not found", colName)
+				}
+				constrainsCols = append(constrainsCols, col)
+			}
+			name := v.Conname
+			if name == "" {
+				name = strings.Join(append([]string{t.Name}, lo.Map(constrainsCols, func(item *Column, index int) string {
+					return item.Name
+				})...), "_") + "_key"
+			}
+			return &Constraint{
+				Name:       name,
+				Type:       ConstraintTypeUnique,
+				Constrains: constrainsCols,
+			}, nil
 		}
 	case pg_query.ConstrType_CONSTR_FOREIGN:
 		{
 			var refers []*Column
-			schema := v.Constraint.Pktable.Schemaname
-			table := v.Constraint.Pktable.Relname
-			for _, colRef := range v.Constraint.PkAttrs {
+			schema := v.Pktable.Schemaname
+			table := v.Pktable.Relname
+			for _, colRef := range v.PkAttrs {
 				colName := StringOrPanic(colRef)
 				col, err := c.FindColumn(schema, table, colName)
 				if err != nil {
@@ -196,7 +225,7 @@ func (c *Compiler) ParseConstraint(t *Table, v *pg_query.Node_Constraint) (*Cons
 				refers = append(refers, col)
 			}
 			var constrainsCols []*Column
-			for _, colRef := range v.Constraint.FkAttrs {
+			for _, colRef := range v.FkAttrs {
 				colName := StringOrPanic(colRef)
 				col, ok := t.Columns.Get(colName)
 				if !ok {
@@ -204,10 +233,16 @@ func (c *Compiler) ParseConstraint(t *Table, v *pg_query.Node_Constraint) (*Cons
 				}
 				constrainsCols = append(constrainsCols, col)
 			}
-			return &Constraint{Type: ConstraintTypeForeignKey, Refers: refers, Constrains: constrainsCols}, nil
+			name := v.Conname
+			if name == "" && len(constrainsCols) > 0 {
+				name = strings.Join(append([]string{t.Name}, lo.Map(constrainsCols, func(item *Column, index int) string {
+					return item.Name
+				})...), "_") + "_fkey"
+			}
+			return &Constraint{Type: ConstraintTypeForeignKey, Name: name, Refers: refers, Constrains: constrainsCols}, nil
 		}
 	}
-	return nil, fmt.Errorf("not yet able to process constraint type %v", v.Constraint.Contype)
+	return nil, fmt.Errorf("not yet able to process constraint type %v", v.Contype)
 }
 
 func (c *Compiler) FindColumn(schema, table, name string) (*Column, error) {
@@ -301,6 +336,7 @@ func (cs Constraints) Nullable() bool {
 }
 
 type Constraint struct {
+	Name       string
 	Type       ConstraintType // Primary, FK, etc
 	Refers     []*Column
 	Constrains []*Column

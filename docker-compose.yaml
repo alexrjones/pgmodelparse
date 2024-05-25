@@ -1,0 +1,12 @@
+version: '3.8'  # Specify the version of the Docker Compose file format
+
+services:
+  postgres:
+    image: postgres:16  # Use the official PostgreSQL image from Docker Hub
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres  # Set the username for the PostgreSQL service
+      POSTGRES_PASSWORD: postgres  # Set the password for the PostgreSQL service
+      POSTGRES_DB: postgres  # Set the database name for the PostgreSQL service
+    ports:
+      - "5432:5432"  # Map the container's port 5432 to the host's port 5432

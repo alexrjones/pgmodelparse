@@ -14,7 +14,8 @@ CREATE TABLE users (
 
 CREATE TABLE orders (
     id bigserial primary key,
-    user_id bigint not null references users(id)
+    user_id bigint not null references users(id),
+    unique (id, user_id)
 );
 
 CREATE TABLE payments (
@@ -22,3 +23,5 @@ CREATE TABLE payments (
     order_id bigint not null,
     FOREIGN KEY (user_id, order_id) REFERENCES orders(id, user_id)
 );
+
+-- ALTER TABLE users DROP CONSTRAINT fk
