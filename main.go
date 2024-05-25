@@ -26,10 +26,12 @@ func main() {
 		log.Fatal().Err(err).Send()
 	}
 
-	parse, err := pg_query.ParseToJSON(string(b))
+	parse, err := pg_query.Parse(string(b))
 	if err != nil {
 		log.Fatal().Err(err).Send()
 	}
+	t := MatchType("bigserial")
+	fmt.Println(t)
 	fmt.Println(parse)
 }
 
