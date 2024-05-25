@@ -62,39 +62,39 @@ var (
 	UUID         = &PostgresType{Name: "uuid", SimpleMatches: []string{"uuid"}, Description: "universally unique identifier"}
 	XML          = &PostgresType{Name: "xml", SimpleMatches: []string{"xml"}, Description: "XML data"}
 
-	Bit        = &PostgresType{Name: "bit [ (n) ]", PatternMatches: []*regexp.Regexp{regexp.MustCompile("bit" + optionally(numInBrackets))}, Description: "fixed-length bit string"}
+	Bit        = &PostgresType{Name: "bit [ (n) ]", PatternMatches: []*regexp.Regexp{regexp.MustCompile("^bit" + optionally(numInBrackets) + "$")}, Description: "fixed-length bit string"}
 	BitVarying = &PostgresType{Name: "bit varying [ (n) ]", Aliases: "varbit [ (n) ]", PatternMatches: []*regexp.Regexp{
-		regexp.MustCompile("bit varying" + optionally(numInBrackets)),
-		regexp.MustCompile("varbit" + optionally(numInBrackets)),
+		regexp.MustCompile("^bit varying" + optionally(numInBrackets) + "$"),
+		regexp.MustCompile("^varbit" + optionally(numInBrackets) + "$"),
 	}, Description: "variable-length bit string"}
 	Character = &PostgresType{Name: "character [ (n) ]", Aliases: "char [ (n) ]", PatternMatches: []*regexp.Regexp{
-		regexp.MustCompile("character" + optionally(numInBrackets)),
-		regexp.MustCompile("char" + optionally(numInBrackets)),
+		regexp.MustCompile("^character" + optionally(numInBrackets) + "$"),
+		regexp.MustCompile("^char" + optionally(numInBrackets) + "$"),
 	}, Description: "fixed-length character string"}
 	CharacterVarying = &PostgresType{Name: "character varying [ (n) ]", Aliases: "varchar [ (n) ]", PatternMatches: []*regexp.Regexp{
-		regexp.MustCompile("character varying" + optionally(numInBrackets)),
-		regexp.MustCompile("varchar" + optionally(numInBrackets)),
+		regexp.MustCompile("^character varying" + optionally(numInBrackets) + "$"),
+		regexp.MustCompile("^varchar" + optionally(numInBrackets) + "$"),
 	}, Description: "variable-length character string"}
 	Interval = &PostgresType{Name: "interval [ fields ] [ (p) ]", PatternMatches: []*regexp.Regexp{
-		regexp.MustCompile("interval" + interval + optionally(numInBrackets)),
+		regexp.MustCompile("^interval" + interval + optionally(numInBrackets) + "$"),
 	}, Description: "time span"}
 	Numeric = &PostgresType{Name: "numeric [ (p, s) ]", Aliases: "decimal [ (p, s) ]", PatternMatches: []*regexp.Regexp{
-		regexp.MustCompile("numeric" + optionally(twoNumsInBrackets)),
-		regexp.MustCompile("decimal" + optionally(numInBrackets)),
+		regexp.MustCompile("^numeric" + optionally(twoNumsInBrackets) + "$"),
+		regexp.MustCompile("^decimal" + optionally(numInBrackets) + "$"),
 	}, Description: "exact numeric of selectable precision"}
 	Time = &PostgresType{Name: "time [ (p) ] [ without time zone ]", PatternMatches: []*regexp.Regexp{
-		regexp.MustCompile("time" + optionally(numInBrackets) + optionally(withoutTimeZone)),
+		regexp.MustCompile("^time" + optionally(numInBrackets) + optionally(withoutTimeZone) + "$"),
 	}, Description: "time of day (no time zone)"}
 	Timetz = &PostgresType{Name: "time [ (p) ] with time zone", Aliases: "timetz", PatternMatches: []*regexp.Regexp{
-		regexp.MustCompile("time" + optionally(numInBrackets) + withTimeZone),
-		regexp.MustCompile("timetz" + optionally(numInBrackets)),
+		regexp.MustCompile("^time" + optionally(numInBrackets) + withTimeZone + "$"),
+		regexp.MustCompile("^timetz" + optionally(numInBrackets) + "$"),
 	}, Description: "time of day, including time zone"}
 	Timestamp = &PostgresType{Name: "timestamp [ (p) ] [ without time zone ]", PatternMatches: []*regexp.Regexp{
-		regexp.MustCompile("timestamp" + optionally(numInBrackets) + optionally(withoutTimeZone)),
+		regexp.MustCompile("^timestamp" + optionally(numInBrackets) + optionally(withoutTimeZone) + "$"),
 	}, Description: "date and time (no time zone)"}
 	Timestamptz = &PostgresType{Name: "timestamp [ (p) ] with time zone", Aliases: "timestamptz", PatternMatches: []*regexp.Regexp{
-		regexp.MustCompile("timestamp" + optionally(numInBrackets) + withTimeZone),
-		regexp.MustCompile("timestamptz" + optionally(numInBrackets)),
+		regexp.MustCompile("^timestamp" + optionally(numInBrackets) + withTimeZone + "$"),
+		regexp.MustCompile("^timestamptz" + optionally(numInBrackets) + "$"),
 	}, Description: "date and time, including time zone"}
 )
 
