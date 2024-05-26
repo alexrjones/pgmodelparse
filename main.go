@@ -135,8 +135,40 @@ func (c *Compiler) CreateTable(stmt *pg_query.CreateStmt) error {
 
 func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 
+	tab, err := c.FindTableFromRangeVar(stmt.Relation)
+	if err != nil {
+		return err
+	}
+
 	for _, cmd := range stmt.Cmds {
-		fmt.Println(cmd)
+		atc, ok := cmd.Node.(*pg_query.Node_AlterTableCmd)
+		if !ok {
+			return fmt.Errorf("expected AlterTableCmd but got %T", cmd.Node)
+		}
+		switch atc.AlterTableCmd.Subtype {
+		case pg_query.AlterTableType_AT_AddColumn:
+			{
+				col, ok := atc.AlterTableCmd.Def.Node.(*pg_query.Node_ColumnDef)
+				if !ok {
+					return fmt.Errorf("expected ColumnDef but got %T", atc.AlterTableCmd.Def.Node)
+				}
+				err = c.DefineColumn(tab, col.ColumnDef)
+				if err != nil {
+					return err
+				}
+			}
+		case pg_query.AlterTableType_AT_DropColumn:
+			{
+				err = c.DropColumn(tab, atc.AlterTableCmd.Name, atc.AlterTableCmd.Behavior)
+				if err != nil {
+					return err
+				}
+			}
+		case pg_query.AlterTableType_AT_DropConstraint:
+			{
+
+			}
+		}
 	}
 	return nil
 }
@@ -160,6 +192,54 @@ func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 		Nullable:    constraints.Nullable(),
 		Constraints: constraints,
 	})
+}
+
+func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBehavior) error {
+
+	col, ok := t.Columns.Get(colName)
+	if !ok {
+		return fmt.Errorf("column %s does not exist", colName)
+	}
+	depends, _ := c.Catalog.Depends.Get(col)
+	var funcs []func()
+	for _, con := range depends {
+		if con.DropBehaviour == DropBehaviourRestrict {
+			if behavior != pg_query.DropBehavior_DROP_CASCADE {
+				return fmt.Errorf("can't drop %s because %s depends on it", col.Name, con.Name)
+			}
+			funcs = append(funcs, func() {
+				for _, otherCols := range con.Depends() {
+					otherCols.RemoveConstraint(con)
+				}
+			})
+		}
+	}
+
+	for _, fn := range funcs {
+		fn()
+	}
+	c.Catalog.Depends.Delete(col)
+	t.Columns.Remove(col.Name)
+	return nil
+}
+
+// FindTableFromRangeVar looks up an existing table from the provided RangeVar.
+func (c *Compiler) FindTableFromRangeVar(r *pg_query.RangeVar) (*Table, error) {
+
+	name := r.Relname
+	schemaName := r.Schemaname
+	if schemaName == "" {
+		schemaName = c.SearchPath
+	}
+	sch, ok := c.Catalog.Schemas.Get(schemaName)
+	if !ok {
+		return nil, fmt.Errorf("couldn't find schema %s", schemaName)
+	}
+	tab, ok := sch.Tables.Get(name)
+	if !ok {
+		return nil, fmt.Errorf("couldn't find table %s", name)
+	}
+	return tab, nil
 }
 
 func (c *Compiler) TypeFromNode(tn *pg_query.TypeName) *PostgresType {
@@ -264,7 +344,7 @@ func (c *Compiler) ParseConstraint(t *Table, v *pg_query.Constraint) (*Constrain
 					return item.Name
 				})...), "_") + "_fkey"
 			}
-			return &Constraint{Type: ConstraintTypeForeignKey, Name: name, Refers: refers, Constrains: constrainsCols}, nil
+			return &Constraint{Type: ConstraintTypeForeignKey, DropBehaviour: DropBehaviourRestrict, Name: name, Refers: refers, Constrains: constrainsCols}, nil
 		}
 	}
 	return nil, fmt.Errorf("not yet able to process constraint type %v", v.Contype)
@@ -350,6 +430,16 @@ type Column struct {
 	Constraints Constraints
 }
 
+func (c *Column) RemoveConstraint(con *Constraint) {
+
+	for i, v := range c.Constraints {
+		if v == con {
+			c.Constraints = append(c.Constraints[:i], c.Constraints[min(i+1, len(c.Constraints)):]...)
+			return
+		}
+	}
+}
+
 type Constraints []*Constraint
 
 func (cs Constraints) Nullable() bool {
@@ -366,7 +456,24 @@ type Constraint struct {
 	Type       ConstraintType // Primary, FK, etc
 	Refers     []*Column
 	Constrains []*Column
+	// DropBehaviour explains how this constraint should behave
+	// when one of its dependencies is dropped.
+	DropBehaviour DropBehaviour
 }
+
+type DropBehaviour int
+
+const (
+	// DropBehaviourCascade causes the object to also be dropped.
+	// This is the behaviour for most constraints.
+	DropBehaviourCascade DropBehaviour = iota
+	// DropBehaviourRestrict prevents dropping the referred object
+	// until the referring object is also removed.
+	// For example, preventing the foreign key columns of a constraint
+	// from being dropped unless the constraint is removed or the
+	// CASCADE keyword is used.
+	DropBehaviourRestrict
+)
 
 type ConstraintType int
 
