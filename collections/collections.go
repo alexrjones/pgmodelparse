@@ -46,3 +46,29 @@ func (o *OrderedMap[K, V]) Remove(key K) {
 		}
 	}
 }
+
+type Multimap[K comparable, V any] struct {
+	m map[K][]V
+}
+
+func NewMultimap[K comparable, V any]() *Multimap[K, V] {
+	return &Multimap[K, V]{m: make(map[K][]V)}
+}
+
+func (m *Multimap[K, V]) AddAll(key K, values ...V) {
+	m.m[key] = append(m.m[key], values...)
+}
+
+func (m *Multimap[K, V]) Add(key K, value V) {
+	m.m[key] = append(m.m[key], value)
+}
+
+func (m *Multimap[K, V]) Delete(key K) {
+	delete(m.m, key)
+}
+
+func (m *Multimap[K, V]) Get(key K) ([]V, bool) {
+
+	value, ok := m.m[key]
+	return value, ok
+}

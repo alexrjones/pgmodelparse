@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"pgmodelgen/collections"
+	"slices"
 	"strings"
 )
 
@@ -48,6 +49,13 @@ func main() {
 					log.Fatal().Err(err).Msg("Error creating table")
 				}
 			}
+		case *pg_query.Node_AlterTableStmt:
+			{
+				err = compiler.AlterTable(p.AlterTableStmt)
+				if err != nil {
+					log.Fatal().Err(err).Msg("Error executing alter table")
+				}
+			}
 		}
 	}
 	fmt.Println(parse)
@@ -63,6 +71,7 @@ func NewCompiler() *Compiler {
 		SearchPath: "public",
 		Catalog: &Catalog{
 			Schemas: collections.NewOrderedMap[string, *Schema](),
+			Depends: collections.NewMultimap[*Column, *Constraint](),
 		},
 	}
 	defaultSchema := &Schema{
@@ -115,8 +124,19 @@ func (c *Compiler) CreateTable(stmt *pg_query.CreateStmt) error {
 					return err
 				}
 				table.Constraints = append(table.Constraints, constraint)
+				for _, col := range constraint.Depends() {
+					c.Catalog.Depends.Add(col, constraint)
+				}
 			}
 		}
+	}
+	return nil
+}
+
+func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
+
+	for _, cmd := range stmt.Cmds {
+		fmt.Println(cmd)
 	}
 	return nil
 }
@@ -127,6 +147,11 @@ func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 	constraints, err := c.ParseConstraints(t, name, def.Constraints)
 	if err != nil {
 		return err
+	}
+	for _, con := range constraints {
+		for _, col := range con.Depends() {
+			c.Catalog.Depends.Add(col, con)
+		}
 	}
 	return t.AddColumn(&Column{
 		Table:       t,
@@ -267,6 +292,7 @@ func (c *Compiler) FindColumn(schema, table, name string) (*Column, error) {
 
 type Catalog struct {
 	Schemas *collections.OrderedMap[string, *Schema]
+	Depends *collections.Multimap[*Column, *Constraint]
 }
 
 func (c *Catalog) AddTable(t *Table) error {
@@ -351,6 +377,11 @@ const (
 	ConstraintTypeNotNull
 	ConstraintTypeDefault
 )
+
+func (c *Constraint) Depends() []*Column {
+
+	return append(slices.Clone(c.Constrains), c.Refers...)
+}
 
 func StringOrPanic(n *pg_query.Node) string {
 

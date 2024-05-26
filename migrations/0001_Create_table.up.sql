@@ -24,4 +24,4 @@ CREATE TABLE payments (
     FOREIGN KEY (user_id, order_id) REFERENCES orders(id, user_id)
 );
 
--- ALTER TABLE users DROP CONSTRAINT fk
+ALTER TABLE users ADD COLUMN abcd text not null;
