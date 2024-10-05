@@ -63,11 +63,11 @@ func (m *Multimap[K, V]) Add(key K, value V) {
 	m.m[key] = append(m.m[key], value)
 }
 
-func (m *Multimap[K, V]) Delete(key K) {
+func (m *Multimap[K, V]) Remove(key K) {
 	delete(m.m, key)
 }
 
-func (m *Multimap[K, V]) DeleteValue(key K, value V) {
+func (m *Multimap[K, V]) RemoveValue(key K, value V) {
 
 	s, ok := m.m[key]
 	if !ok {
