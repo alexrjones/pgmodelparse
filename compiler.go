@@ -209,8 +209,8 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 				return fmt.Errorf("can't drop %s because %s depends on it", col.Name, con.Name)
 			}
 			funcs = append(funcs, func() {
-				for _, otherCols := range con.Depends() {
-					otherCols.RemoveConstraint(con)
+				for _, other := range con.Depends() {
+					c.Catalog.Depends.RemoveValue(other, con)
 				}
 			})
 		}
@@ -227,7 +227,7 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 func (c *Compiler) RemoveConstraint(con *Constraint) {
 
 	for _, col := range con.Depends() {
-		col.RemoveConstraint(con)
+		c.Catalog.Depends.RemoveValue(col, con)
 	}
 }
 
