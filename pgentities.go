@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"pgmodelgen/collections"
 	"slices"
+	"strings"
 )
 
 type Catalog struct {
@@ -84,6 +85,15 @@ type Column struct {
 }
 
 type Columns []*Column
+
+func (c Columns) JoinColumnNames(sep string) string {
+
+	names := make([]string, 0, len(c))
+	for _, col := range c {
+		names = append(names, col.Name)
+	}
+	return strings.Join(names, sep)
+}
 
 type Constraint struct {
 	Table      *Table

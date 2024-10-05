@@ -290,7 +290,9 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 			if err != nil {
 				return nil, err
 			}
-			return &Constraint{Table: t, Name: "<notnull>", Type: ConstraintTypeNotNull, Constrains: cols}, nil
+			return &Constraint{Table: t,
+				Name: strings.Join([]string{t.Name, cols.JoinColumnNames("_"), "notnull"}, "_"),
+				Type: ConstraintTypeNotNull, Constrains: cols}, nil
 		}
 	case pg_query.ConstrType_CONSTR_DEFAULT:
 		{
@@ -298,11 +300,13 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 			if err != nil {
 				return nil, err
 			}
-			return &Constraint{Table: t, Name: "<default>", Type: ConstraintTypeDefault, Constrains: cols}, nil
+			return &Constraint{Table: t,
+				Name: strings.Join([]string{t.Name, cols.JoinColumnNames("_"), "default"}, "_"),
+				Type: ConstraintTypeDefault, Constrains: cols}, nil
 		}
 	case pg_query.ConstrType_CONSTR_UNIQUE:
 		{
-			var constrainsCols []*Column
+			constrainsCols := make(Columns, 0, 5)
 			if len(colNames) > 0 {
 				cols, err := ColumnsFromColNames(t, colNames)
 				if err != nil {
@@ -321,9 +325,7 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 			}
 			name := v.Conname
 			if name == "" {
-				name = strings.Join(append([]string{t.Name}, lo.Map(constrainsCols, func(item *Column, index int) string {
-					return item.Name
-				})...), "_") + "_key"
+				name = strings.Join([]string{t.Name, constrainsCols.JoinColumnNames("_"), "key"}, "_")
 			}
 			return &Constraint{Table: t,
 				Name:       name,
@@ -394,8 +396,8 @@ func StringOrPanic(n *pg_query.Node) string {
 	return s.String_.Sval
 }
 
-func ColumnsFromColNames(t *Table, names []string) ([]*Column, error) {
-	ret := make([]*Column, 0, len(names))
+func ColumnsFromColNames(t *Table, names []string) (Columns, error) {
+	ret := make(Columns, 0, len(names))
 	for _, name := range names {
 		col, ok := t.Columns.Get(name)
 		if !ok {
