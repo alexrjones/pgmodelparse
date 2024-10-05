@@ -18,7 +18,10 @@ func NewCompiler() *Compiler {
 		SearchPath: "public",
 		Catalog: &Catalog{
 			Schemas: collections.NewOrderedMap[string, *Schema](),
-			Depends: collections.NewMultimap[*Column, *Constraint](),
+			Depends: &Depends{
+				ConstraintsByColumn: collections.NewMultimap[*Column, *Constraint](),
+				ConstraintsByName:   make(map[string]*Constraint),
+			},
 		},
 	}
 	defaultSchema := &Schema{
@@ -101,10 +104,7 @@ func (c *Compiler) CreateTable(stmt *pg_query.CreateStmt) error {
 				if err != nil {
 					return err
 				}
-				table.Constraints = append(table.Constraints, constraint)
-				for _, col := range constraint.Depends() {
-					c.Catalog.Depends.Add(col, constraint)
-				}
+				c.Catalog.Depends.AddConstraint(constraint)
 			}
 		}
 	}
@@ -152,9 +152,7 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 				if err != nil {
 					return err
 				}
-				for _, col := range constraint.Depends() {
-					c.Catalog.Depends.Add(col, constraint)
-				}
+				c.Catalog.Depends.AddConstraint(constraint)
 			}
 		case pg_query.AlterTableType_AT_ColumnDefault:
 			{
@@ -187,10 +185,8 @@ func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 	if err != nil {
 		return err
 	}
-	for _, con := range constraints {
-		for _, col := range con.Depends() {
-			c.Catalog.Depends.Add(col, con)
-		}
+	for _, cons := range constraints {
+		c.Catalog.Depends.AddConstraint(cons)
 	}
 	return nil
 }
@@ -201,7 +197,7 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 	if !ok {
 		return fmt.Errorf("column %s does not exist", colName)
 	}
-	depends, _ := c.Catalog.Depends.Get(col)
+	depends, _ := c.Catalog.Depends.ConstraintsByColumn.Get(col)
 	var funcs []func()
 	for _, con := range depends {
 		if con.DropBehaviour == DropBehaviourRestrict {
@@ -209,9 +205,7 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 				return fmt.Errorf("can't drop %s because %s depends on it", col.Name, con.Name)
 			}
 			funcs = append(funcs, func() {
-				for _, other := range con.Depends() {
-					c.Catalog.Depends.RemoveValue(other, con)
-				}
+				c.Catalog.Depends.RemoveConstraint(con)
 			})
 		}
 	}
@@ -219,16 +213,9 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 	for _, fn := range funcs {
 		fn()
 	}
-	c.Catalog.Depends.Remove(col)
+	c.Catalog.Depends.ConstraintsByColumn.Remove(col)
 	t.Columns.Remove(col.Name)
 	return nil
-}
-
-func (c *Compiler) RemoveConstraint(con *Constraint) {
-
-	for _, col := range con.Depends() {
-		c.Catalog.Depends.RemoveValue(col, con)
-	}
 }
 
 // FindTableFromRangeVar looks up an existing table from the provided RangeVar.

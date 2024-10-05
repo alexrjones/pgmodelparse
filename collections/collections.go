@@ -86,3 +86,48 @@ func (m *Multimap[K, V]) Get(key K) ([]V, bool) {
 	value, ok := m.m[key]
 	return value, ok
 }
+
+type BidiMultimap[L, R comparable] struct {
+	LeftToRight *Multimap[L, R]
+	RightToLeft *Multimap[R, L]
+}
+
+func NewBidiMultimap[L, R comparable]() *BidiMultimap[L, R] {
+
+	return &BidiMultimap[L, R]{
+		LeftToRight: NewMultimap[L, R](),
+		RightToLeft: NewMultimap[R, L](),
+	}
+}
+
+func (m *BidiMultimap[L, R]) GetLeft(key L) ([]R, bool) {
+	return m.LeftToRight.Get(key)
+}
+
+func (m *BidiMultimap[L, R]) AddLeft(key L, value R) {
+
+	m.LeftToRight.Add(key, value)
+	m.RightToLeft.Add(value, key)
+}
+
+func removeSide[L, R comparable](m1 *Multimap[L, R], m2 *Multimap[R, L], key L) {
+
+	v, ok := m1.Get(key)
+	if !ok {
+		return
+	}
+	for _, e := range v {
+		m2.RemoveValue(e, key)
+	}
+	m1.Remove(key)
+}
+
+func (m *BidiMultimap[L, R]) RemoveRight(key R) {
+
+	removeSide(m.RightToLeft, m.LeftToRight, key)
+}
+
+func (m *BidiMultimap[L, R]) RemoveLeft(key L) {
+
+	removeSide(m.LeftToRight, m.RightToLeft, key)
+}

@@ -8,7 +8,27 @@ import (
 
 type Catalog struct {
 	Schemas *collections.OrderedMap[string, *Schema]
-	Depends *collections.Multimap[*Column, *Constraint]
+	Depends *Depends
+}
+
+type Depends struct {
+	ConstraintsByColumn *collections.Multimap[*Column, *Constraint]
+	ConstraintsByName   map[string]*Constraint
+}
+
+func (d *Depends) AddConstraint(cons *Constraint) {
+
+	for _, col := range cons.Depends() {
+		d.ConstraintsByColumn.Add(col, cons)
+	}
+	d.ConstraintsByName[cons.Name] = cons
+}
+
+func (d *Depends) RemoveConstraint(cons *Constraint) {
+	for _, col := range cons.Depends() {
+		d.ConstraintsByColumn.Remove(col)
+	}
+	delete(d.ConstraintsByName, cons.Name)
 }
 
 func (c *Catalog) AddTable(t *Table) error {
@@ -35,10 +55,9 @@ func (s *Schema) AddTable(t *Table) error {
 }
 
 type Table struct {
-	Name        string
-	Schema      string
-	Columns     *collections.OrderedMap[string, *Column]
-	Constraints Constraints
+	Name    string
+	Schema  string
+	Columns *collections.OrderedMap[string, *Column]
 }
 
 func NewTable(name, schema string) *Table {
@@ -59,34 +78,25 @@ func (t *Table) AddColumn(c *Column) error {
 }
 
 type Column struct {
-	Table       *Table
-	Name        string
-	Type        *PostgresType
-	Constraints Constraints
+	Table *Table
+	Name  string
+	Type  *PostgresType
 }
 
-func (c *Column) RemoveConstraint(con *Constraint) {
-
-	for i, v := range c.Constraints {
-		if v == con {
-			c.Constraints = append(c.Constraints[:i], c.Constraints[min(i+1, len(c.Constraints)):]...)
-			return
-		}
-	}
-}
+type Columns []*Column
 
 type Constraint struct {
 	Table      *Table
 	Name       string
 	Type       ConstraintType // Primary, FK, etc
-	Refers     []*Column
-	Constrains []*Column
+	Refers     Columns
+	Constrains Columns
 	// DropBehaviour explains how this constraint should behave
 	// when one of its dependencies is dropped.
 	DropBehaviour DropBehaviour
 }
 
-func (c *Constraint) Depends() []*Column {
+func (c *Constraint) Depends() Columns {
 
 	return slices.Concat(c.Constrains, c.Refers)
 }

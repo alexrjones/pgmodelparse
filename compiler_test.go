@@ -45,15 +45,20 @@ func TestCompiler_CreateTable(t *testing.T) {
 	idCol, ok := table.Columns.Get("id")
 	require.True(t, ok)
 	assert.Equal(t, idCol.Type, Bigserial)
-	idConstraints, ok := c.Catalog.Depends.Get(idCol)
+	idConstraints, ok := c.Catalog.Depends.ConstraintsByColumn.Get(idCol)
 	assert.True(t, ok)
-	expectedConstraints := Constraints{{
+	pKeyConstraint := Constraint{
 		Table:         table,
 		Name:          "test_pkey",
 		Type:          ConstraintTypePrimary,
 		Refers:        nil,
-		Constrains:    []*Column{idCol},
-		DropBehaviour: DropBehaviourRestrict,
-	}}
+		Constrains:    Columns{idCol},
+		DropBehaviour: 0,
+	}
+	actualConstraint, ok := c.Catalog.Depends.ConstraintsByName[pKeyConstraint.Name]
+	assert.True(t, ok)
+	assert.Equal(t, pKeyConstraint, *actualConstraint)
+
+	expectedConstraints := Constraints{actualConstraint}
 	assert.ElementsMatch(t, expectedConstraints, idConstraints)
 }
