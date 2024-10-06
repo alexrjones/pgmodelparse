@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +16,18 @@ func assertParse(t *testing.T, stmts string) *Compiler {
 	err = c.ParseStatements(parse)
 	assert.Nil(t, err)
 	return c
+}
+
+func assertParseError(t *testing.T, stmts string, messageContains ...string) {
+	parse, err := pg_query.Parse(stmts)
+	require.Nil(t, err)
+	c := NewCompiler()
+	err = c.ParseStatements(parse)
+	assert.NotNil(t, err)
+	msg := err.Error()
+	for _, m := range messageContains {
+		assert.Contains(t, msg, m)
+	}
 }
 
 func assertTable(t *testing.T, c *Compiler, path string) *Table {
@@ -159,7 +170,6 @@ func TestCompiler_ForeignKey(t *testing.T) {
 
 const multiColumnUniqueConstraint = `
 CREATE TABLE unique_constrained (
-	id BIGSERIAL PRIMARY KEY ,
 	uk1 INT NOT NULL,
 	uk2 INT NOT NULL,
 	UNIQUE (uk1, uk2)
@@ -168,8 +178,38 @@ CREATE TABLE unique_constrained (
 
 func TestCompiler_MultiColumnUniqueConstraint(t *testing.T) {
 	c := assertParse(t, multiColumnUniqueConstraint)
-	fmt.Println(c)
-	_ = c
+	tab := assertTable(t, c, "unique_constrained")
+	uk1 := assertColumn(t, tab, "uk1", Integer, ColumnAttributes{IsNullable: false})
+	uk2 := assertColumn(t, tab, "uk2", Integer, ColumnAttributes{IsNullable: false})
+	cons, ok := c.Catalog.Depends.ConstraintsByName["unique_constrained_uk1_uk2_key"]
+	require.True(t, ok)
+	assert.ElementsMatch(t, Columns{uk1, uk2}, cons.Constrains)
+}
+
+const dropConstraintNotNull = `
+CREATE TABLE test (
+  test int not null
+);
+
+ALTER TABLE test ALTER COLUMN test DROP NOT NULL;
+`
+
+func TestCompiler_AlterTable_DropConstraintNotNull(t *testing.T) {
+	c := assertParse(t, dropConstraintNotNull)
+	tab := assertTable(t, c, "test")
+	assertColumn(t, tab, "test", Integer, ColumnAttributes{IsNullable: true})
+}
+
+const dropConstraint = `
+CREATE TABLE test (
+  test int primary key
+);
+
+ALTER TABLE test ALTER COLUMN test DROP NOT NULL;
+`
+
+func TestCompiler_AlterTable_DropConstraintNotNull_PrimaryKey_Fails(t *testing.T) {
+	assertParseError(t, dropConstraint, "can't drop not null constraint from primary key column")
 }
 
 const defaultVariants = `
@@ -185,3 +225,5 @@ CREATE TABLE defaulters (
 func TestCompiler_DefaultVariants(t *testing.T) {
 	assertParse(t, defaultVariants)
 }
+
+//func TestCompiler_

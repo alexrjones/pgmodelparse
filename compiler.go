@@ -157,6 +157,26 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 			}
 		case pg_query.AlterTableType_AT_DropConstraint:
 			{
+
+			}
+		case pg_query.AlterTableType_AT_DropNotNull:
+			{
+				col, err := ColumnFromColName(tab, atc.AlterTableCmd.Name)
+				if err != nil {
+					return err
+				}
+				if col.Attrs.IsNullable {
+					return fmt.Errorf("can't drop not null constraint from nullable column %s.%s", tab.Name, col.Name)
+				}
+				if cons, ok := c.Catalog.Depends.ConstraintsByColumn.Get(col); ok {
+					for _, con := range cons {
+						if con.Type == ConstraintTypePrimary {
+							return fmt.Errorf("can't drop not null constraint from primary key column %s.%s", tab.Name, col.Name)
+						}
+					}
+				}
+				col.Attrs.IsNullable = true
+				return nil
 			}
 		}
 	}
