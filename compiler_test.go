@@ -141,7 +141,7 @@ func TestCompiler_AlterTable(t *testing.T) {
 	}
 }
 
-const addForeignKey = `
+const addForeignKey1 = `
 CREATE TABLE orders (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
@@ -150,9 +150,17 @@ CREATE TABLE orders (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 `
+const addForeignKey2 = `
+CREATE TABLE orders (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    total_amount DECIMAL(10, 2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+`
 
 func TestCompiler_ForeignKey(t *testing.T) {
-	parse, err := pg_query.Parse(joinNewline(createUsersTable, addColumn, addForeignKey))
+	parse, err := pg_query.Parse(joinNewline(createUsersTable, addColumn, addForeignKey2))
 	require.Nil(t, err)
 	c := NewCompiler()
 	err = c.ParseStatements(parse)

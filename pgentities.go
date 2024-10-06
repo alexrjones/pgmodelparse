@@ -86,13 +86,17 @@ type Column struct {
 
 type Columns []*Column
 
-func (c Columns) JoinColumnNames(sep string) string {
-
+func (c Columns) Names() []string {
 	names := make([]string, 0, len(c))
 	for _, col := range c {
 		names = append(names, col.Name)
 	}
-	return strings.Join(names, sep)
+	return names
+}
+
+func (c Columns) JoinColumnNames(sep string) string {
+
+	return strings.Join(c.Names(), sep)
 }
 
 type Constraint struct {

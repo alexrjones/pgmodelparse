@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	pg_query "github.com/pganalyze/pg_query_go/v5"
-	"github.com/samber/lo"
 	"pgmodelgen/collections"
 	"strings"
 )
@@ -257,9 +256,6 @@ func (c *Compiler) ParseConstraints(t *Table, colName string, constraints []*pg_
 		if err != nil {
 			return nil, err
 		}
-		if con.Type == ConstraintTypeForeignKey && con.Name == "" {
-			con.Name = t.Name + "_" + colName + "_fkey"
-		}
 		ret = append(ret, con)
 	}
 	return ret, nil
@@ -343,7 +339,7 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 				}
 				refers = append(refers, col)
 			}
-			var constrainsCols []*Column
+			constrainsCols := make(Columns, 0, len(v.FkAttrs))
 			for _, colRef := range v.FkAttrs {
 				colName := StringOrPanic(colRef)
 				col, ok := t.Columns.Get(colName)
@@ -352,11 +348,20 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 				}
 				constrainsCols = append(constrainsCols, col)
 			}
+			if len(constrainsCols) == 0 {
+				// For syntax like:
+				// CREATE TABLE example (user_id INTEGER REFERENCES users(id));
+				// the name of the constrained column is not in the node, and is provided
+				// by the caller instead
+				var err error
+				constrainsCols, err = ColumnsFromColNames(t, colNames)
+				if err != nil {
+					return nil, err
+				}
+			}
 			name := v.Conname
 			if name == "" && len(constrainsCols) > 0 {
-				name = strings.Join(append([]string{t.Name}, lo.Map(constrainsCols, func(item *Column, index int) string {
-					return item.Name
-				})...), "_") + "_fkey"
+				name = strings.Join([]string{t.Name, constrainsCols.JoinColumnNames("_"), "fkey"}, "_")
 			}
 			return &Constraint{Table: t, Type: ConstraintTypeForeignKey, DropBehaviour: DropBehaviourRestrict, Name: name, Refers: refers, Constrains: constrainsCols}, nil
 		}
