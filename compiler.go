@@ -290,6 +290,10 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			if err != nil {
 				return err
 			}
+			err = c.ParseExpr(v.RawExpr)
+			if err != nil {
+				return err
+			}
 			//col.Attrs.ColumnDefault = v.RawExpr
 			return nil
 		}
@@ -392,6 +396,66 @@ func (c *Compiler) FindColumn(schema, table, name string) (*Column, error) {
 		return nil, fmt.Errorf("column %s not found", name)
 	}
 	return col, nil
+}
+
+func (c *Compiler) ParseExpr(n *pg_query.Node) error {
+
+	switch x := n.Node.(type) {
+	case *pg_query.Node_SqlvalueFunction:
+		{
+			// A value function is e.g. CURRENT_TIMESTAMP -
+			// looks like a value but behaves like a function
+			fmt.Println(x.SqlvalueFunction.Op)
+		}
+	case *pg_query.Node_FuncCall:
+		{
+			// Function invocation e.g. NOW()
+			fmt.Println(StringsOrPanic(x.FuncCall.Funcname))
+			// TODO: x.FuncCall.Args...
+		}
+	case *pg_query.Node_AConst:
+		{
+			if x.AConst.Isnull {
+				fmt.Println("<nil>")
+				return nil
+			}
+
+			// Constant default value
+			switch sv := x.AConst.Val.(type) {
+			case *pg_query.A_Const_Sval:
+				{
+					fmt.Println(sv.Sval.Sval)
+				}
+			case *pg_query.A_Const_Boolval:
+				{
+					fmt.Println(sv.Boolval.Boolval)
+				}
+			case *pg_query.A_Const_Ival:
+				{
+					fmt.Println(sv.Ival.Ival)
+				}
+			case *pg_query.A_Const_Fval:
+				{
+					fmt.Println(sv.Fval.Fval)
+				}
+			case *pg_query.A_Const_Bsval:
+				{
+					fmt.Println(sv.Bsval.Bsval)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func StringsOrPanic(ns []*pg_query.Node) []string {
+
+	ret := make([]string, 0, len(ns))
+	for _, n := range ns {
+		ret = append(ret, StringOrPanic(n))
+	}
+	return ret
 }
 
 func StringOrPanic(n *pg_query.Node) string {

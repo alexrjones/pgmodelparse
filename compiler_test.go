@@ -171,3 +171,17 @@ func TestCompiler_MultiColumnUniqueConstraint(t *testing.T) {
 	fmt.Println(c)
 	_ = c
 }
+
+const defaultVariants = `
+CREATE TABLE defaulters (
+    time1 timestamptz default now(),
+    time2 timestamptz default current_timestamp,
+    constant text default 'abcd',
+    expression int default 10+1,
+    nully text default null
+)
+`
+
+func TestCompiler_DefaultVariants(t *testing.T) {
+	assertParse(t, defaultVariants)
+}
