@@ -166,10 +166,6 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 	return nil
 }
 
-func (c *Compiler) DropConstraint(t *Table) error {
-	return nil
-}
-
 func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 	name := def.Colname
 	pgType := c.TypeFromNode(def.TypeName)
@@ -300,6 +296,7 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 			if err != nil {
 				return nil, err
 			}
+			// TODO: parse default value supplier expressions
 			return &Constraint{Table: t,
 				Name: strings.Join([]string{t.Name, cols.JoinColumnNames("_"), "default"}, "_"),
 				Type: ConstraintTypeDefault, Constrains: cols}, nil

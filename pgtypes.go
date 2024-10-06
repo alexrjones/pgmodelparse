@@ -38,7 +38,7 @@ var (
 	Date         = &PostgresType{Name: "date", SimpleMatches: []string{"date"}, Description: "calendar date (year, month, day)"}
 	Double       = &PostgresType{Name: "double precision", Aliases: "float8", SimpleMatches: []string{"double precision", "float8"}, Description: "double precision floating-point number (8 bytes)"}
 	Inet         = &PostgresType{Name: "inet", SimpleMatches: []string{"inet"}, Description: "IPv4 or IPv6 host address"}
-	Integer      = &PostgresType{Name: "integer", Aliases: "int, int4", SimpleMatches: []string{"integer", "int, int4"}, Description: "signed four-byte integer"}
+	Integer      = &PostgresType{Name: "integer", Aliases: "int, int4", SimpleMatches: []string{"integer", "int", "int4"}, Description: "signed four-byte integer"}
 	JSON         = &PostgresType{Name: "json", SimpleMatches: []string{"json"}, Description: "textual JSON data"}
 	JSONB        = &PostgresType{Name: "jsonb", SimpleMatches: []string{"jsonb"}, Description: "binary JSON data, decomposed"}
 	Line         = &PostgresType{Name: "line", SimpleMatches: []string{"line"}, Description: "infinite line on a plane"}
