@@ -82,6 +82,14 @@ type Column struct {
 	Table *Table
 	Name  string
 	Type  *PostgresType
+	Attrs *ColumnAttributes
+}
+
+type ColumnAttributes struct {
+	IsNullable bool
+	//ColumnDefault *pg_query.Node // TODO: parse to native type
+	// Other values include: char max length for varchar,
+	// decimal and timezone precision, etc...
 }
 
 type Columns []*Column

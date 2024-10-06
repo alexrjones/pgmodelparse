@@ -99,11 +99,10 @@ func (c *Compiler) CreateTable(stmt *pg_query.CreateStmt) error {
 			}
 		case *pg_query.Node_Constraint:
 			{
-				constraint, err := c.ParseConstraint(table, nil, p.Constraint)
+				err = c.DefineConstraint(table, "", p.Constraint)
 				if err != nil {
 					return err
 				}
-				c.Catalog.Depends.AddConstraint(constraint)
 			}
 		}
 	}
@@ -147,11 +146,10 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 				if !ok {
 					return fmt.Errorf("expected Constraint but got %T", atc.AlterTableCmd.Def.Node)
 				}
-				constraint, err := c.ParseConstraint(tab, nil, conDef.Constraint)
+				err = c.DefineConstraint(tab, "", conDef.Constraint)
 				if err != nil {
 					return err
 				}
-				c.Catalog.Depends.AddConstraint(constraint)
 			}
 		case pg_query.AlterTableType_AT_ColumnDefault:
 			{
@@ -172,16 +170,16 @@ func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 		Table: t,
 		Name:  name,
 		Type:  pgType,
+		Attrs: &ColumnAttributes{
+			IsNullable: true,
+		},
 	})
 	if err != nil {
 		return err
 	}
-	constraints, err := c.ParseConstraints(t, name, def.Constraints)
+	err = c.DefineConstraints(t, name, def.Constraints)
 	if err != nil {
 		return err
-	}
-	for _, cons := range constraints {
-		c.Catalog.Depends.AddConstraint(cons)
 	}
 	return nil
 }
@@ -245,23 +243,21 @@ func (c *Compiler) TypeFromNode(tn *pg_query.TypeName) *PostgresType {
 	return MatchType(strings.Join(parts, "."))
 }
 
-func (c *Compiler) ParseConstraints(t *Table, colName string, constraints []*pg_query.Node) (Constraints, error) {
-	ret := make(Constraints, 0, len(constraints))
+func (c *Compiler) DefineConstraints(t *Table, colName string, constraints []*pg_query.Node) error {
 	for _, n := range constraints {
 		v, ok := n.Node.(*pg_query.Node_Constraint)
 		if !ok {
 			panic("unknown how to parse node " + n.String())
 		}
-		con, err := c.ParseConstraint(t, []string{colName}, v.Constraint)
+		err := c.DefineConstraint(t, colName, v.Constraint)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		ret = append(ret, con)
 	}
-	return ret, nil
+	return nil
 }
 
-func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Constraint) (*Constraint, error) {
+func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constraint) error {
 
 	switch v.Contype {
 	case pg_query.ConstrType_CONSTR_PRIMARY:
@@ -270,48 +266,48 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 			if name == "" {
 				name = t.Name + "_" + "pkey"
 			}
-			cols, err := ColumnsFromColNames(t, colNames)
+			col, err := ColumnFromColName(t, colName)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			return &Constraint{Table: t, Name: name, Type: ConstraintTypePrimary, Constrains: cols}, nil
+			col.Attrs.IsNullable = false
+			con := &Constraint{Table: t, Name: name, Type: ConstraintTypePrimary, Constrains: Columns{col}}
+			c.Catalog.Depends.AddConstraint(con)
+			return nil
 		}
 	case pg_query.ConstrType_CONSTR_NOTNULL:
 		{
-			cols, err := ColumnsFromColNames(t, colNames)
+			col, err := ColumnFromColName(t, colName)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			return &Constraint{Table: t,
-				Name: strings.Join([]string{t.Name, cols.JoinColumnNames("_"), "notnull"}, "_"),
-				Type: ConstraintTypeNotNull, Constrains: cols}, nil
+			col.Attrs.IsNullable = false
+			return nil
 		}
 	case pg_query.ConstrType_CONSTR_DEFAULT:
 		{
-			cols, err := ColumnsFromColNames(t, colNames)
+			_, err := ColumnFromColName(t, colName)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			// TODO: parse default value supplier expressions
-			return &Constraint{Table: t,
-				Name: strings.Join([]string{t.Name, cols.JoinColumnNames("_"), "default"}, "_"),
-				Type: ConstraintTypeDefault, Constrains: cols}, nil
+			//col.Attrs.ColumnDefault = v.RawExpr
+			return nil
 		}
 	case pg_query.ConstrType_CONSTR_UNIQUE:
 		{
-			constrainsCols := make(Columns, 0, 5)
-			if len(colNames) > 0 {
-				cols, err := ColumnsFromColNames(t, colNames)
+			constrainsCols := make(Columns, 0, 1)
+			if colName != "" {
+				col, err := ColumnFromColName(t, colName)
 				if err != nil {
-					return nil, err
+					return err
 				}
-				constrainsCols = cols
+				constrainsCols = append(constrainsCols, col)
 			} else {
 				for _, colRef := range v.Keys {
 					colName := StringOrPanic(colRef)
 					col, ok := t.Columns.Get(colName)
 					if !ok {
-						return nil, fmt.Errorf("column %s not found", colName)
+						return fmt.Errorf("column %s not found", colName)
 					}
 					constrainsCols = append(constrainsCols, col)
 				}
@@ -320,11 +316,12 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 			if name == "" {
 				name = strings.Join([]string{t.Name, constrainsCols.JoinColumnNames("_"), "key"}, "_")
 			}
-			return &Constraint{Table: t,
+			c.Catalog.Depends.AddConstraint(&Constraint{Table: t,
 				Name:       name,
 				Type:       ConstraintTypeUnique,
 				Constrains: constrainsCols,
-			}, nil
+			})
+			return nil
 		}
 	case pg_query.ConstrType_CONSTR_FOREIGN:
 		{
@@ -335,7 +332,7 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 				colName := StringOrPanic(colRef)
 				col, err := c.FindColumn(schema, table, colName)
 				if err != nil {
-					return nil, fmt.Errorf("couldn't find column '%s' in table '%s'", colName, table)
+					return fmt.Errorf("couldn't find column '%s' in table '%s'", colName, table)
 				}
 				refers = append(refers, col)
 			}
@@ -344,7 +341,7 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 				colName := StringOrPanic(colRef)
 				col, ok := t.Columns.Get(colName)
 				if !ok {
-					return nil, fmt.Errorf("column %s not found", colName)
+					return fmt.Errorf("column %s not found", colName)
 				}
 				constrainsCols = append(constrainsCols, col)
 			}
@@ -353,20 +350,28 @@ func (c *Compiler) ParseConstraint(t *Table, colNames []string, v *pg_query.Cons
 				// CREATE TABLE example (user_id INTEGER REFERENCES users(id));
 				// the name of the constrained column is not in the node, and is provided
 				// by the caller instead
-				var err error
-				constrainsCols, err = ColumnsFromColNames(t, colNames)
+				col, err := ColumnFromColName(t, colName)
 				if err != nil {
-					return nil, err
+					return err
 				}
+				constrainsCols = append(constrainsCols, col)
 			}
 			name := v.Conname
 			if name == "" && len(constrainsCols) > 0 {
 				name = strings.Join([]string{t.Name, constrainsCols.JoinColumnNames("_"), "fkey"}, "_")
 			}
-			return &Constraint{Table: t, Type: ConstraintTypeForeignKey, DropBehaviour: DropBehaviourRestrict, Name: name, Refers: refers, Constrains: constrainsCols}, nil
+			c.Catalog.Depends.AddConstraint(&Constraint{
+				Table:         t,
+				Type:          ConstraintTypeForeignKey,
+				DropBehaviour: DropBehaviourRestrict,
+				Name:          name,
+				Refers:        refers,
+				Constrains:    constrainsCols,
+			})
+			return nil
 		}
 	}
-	return nil, fmt.Errorf("not yet able to process constraint type %v", v.Contype)
+	return fmt.Errorf("not yet able to process constraint type %v", v.Contype)
 }
 
 func (c *Compiler) FindColumn(schema, table, name string) (*Column, error) {
@@ -398,12 +403,20 @@ func StringOrPanic(n *pg_query.Node) string {
 	return s.String_.Sval
 }
 
+func ColumnFromColName(t *Table, name string) (*Column, error) {
+	col, ok := t.Columns.Get(name)
+	if !ok {
+		return nil, fmt.Errorf("column %s not found", name)
+	}
+	return col, nil
+}
+
 func ColumnsFromColNames(t *Table, names []string) (Columns, error) {
 	ret := make(Columns, 0, len(names))
 	for _, name := range names {
-		col, ok := t.Columns.Get(name)
-		if !ok {
-			return nil, fmt.Errorf("column %s not found", name)
+		col, err := ColumnFromColName(t, name)
+		if err != nil {
+			return nil, err
 		}
 		ret = append(ret, col)
 	}

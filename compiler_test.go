@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
@@ -8,6 +9,15 @@ import (
 	"strings"
 	"testing"
 )
+
+func assertParse(t *testing.T, stmts string) *Compiler {
+	parse, err := pg_query.Parse(stmts)
+	require.Nil(t, err)
+	c := NewCompiler()
+	err = c.ParseStatements(parse)
+	assert.Nil(t, err)
+	return c
+}
 
 func assertTable(t *testing.T, c *Compiler, path string) *Table {
 	t.Helper()
@@ -26,12 +36,13 @@ func assertTable(t *testing.T, c *Compiler, path string) *Table {
 	return table
 }
 
-func assertColumn(t *testing.T, tab *Table, name string, pgtype *PostgresType) *Column {
+func assertColumn(t *testing.T, tab *Table, name string, pgtype *PostgresType, attrs ColumnAttributes) *Column {
 	t.Helper()
 
 	col, ok := tab.Columns.Get(name)
 	require.True(t, ok)
 	assert.Equal(t, col.Type, pgtype)
+	assert.Equal(t, attrs, *col.Attrs)
 	return col
 }
 
@@ -68,15 +79,11 @@ CREATE TABLE users (
 `
 
 func TestCompiler_CreateTable(t *testing.T) {
-	parse, err := pg_query.Parse(createUsersTable)
-	require.Nil(t, err)
-	c := NewCompiler()
-	err = c.ParseStatements(parse)
-	assert.Nil(t, err)
+	c := assertParse(t, createUsersTable)
 
 	table := assertTable(t, c, "users")
 	{
-		col := assertColumn(t, table, "id", Serial)
+		col := assertColumn(t, table, "id", Serial, ColumnAttributes{IsNullable: false})
 		assertConstraints(t, c, col, Constraint{
 			Table:      table,
 			Name:       "users_pkey",
@@ -85,13 +92,8 @@ func TestCompiler_CreateTable(t *testing.T) {
 		})
 	}
 	{
-		col := assertColumn(t, table, "username", CharacterVarying)
+		col := assertColumn(t, table, "username", CharacterVarying, ColumnAttributes{IsNullable: false})
 		assertConstraints(t, c, col, Constraint{
-			Table:      table,
-			Name:       "users_username_notnull",
-			Type:       ConstraintTypeNotNull,
-			Constrains: Columns{col},
-		}, Constraint{
 			Table:      table,
 			Name:       "users_username_key",
 			Type:       ConstraintTypeUnique,
@@ -99,22 +101,12 @@ func TestCompiler_CreateTable(t *testing.T) {
 		})
 	}
 	{
-		col := assertColumn(t, table, "email", CharacterVarying)
-		assertConstraints(t, c, col, Constraint{
-			Table:      table,
-			Name:       "users_email_notnull",
-			Type:       ConstraintTypeNotNull,
-			Constrains: Columns{col},
-		})
+		col := assertColumn(t, table, "email", CharacterVarying, ColumnAttributes{IsNullable: false})
+		assertConstraints(t, c, col)
 	}
 	{
-		col := assertColumn(t, table, "created_at", Timestamp)
-		assertConstraints(t, c, col, Constraint{
-			Table:      table,
-			Name:       "users_created_at_default",
-			Type:       ConstraintTypeDefault,
-			Constrains: Columns{col},
-		})
+		col := assertColumn(t, table, "created_at", Timestamp, ColumnAttributes{IsNullable: true})
+		assertConstraints(t, c, col)
 	}
 }
 
@@ -128,15 +120,10 @@ ALTER TABLE users ADD COLUMN last_login TIMESTAMP;
 `
 
 func TestCompiler_AlterTable(t *testing.T) {
-	parse, err := pg_query.Parse(joinNewline(createUsersTable, addColumn))
-	require.Nil(t, err)
-	c := NewCompiler()
-	err = c.ParseStatements(parse)
-	assert.Nil(t, err)
-
+	c := assertParse(t, joinNewline(createUsersTable, addColumn))
 	table := assertTable(t, c, "users")
 	{
-		col := assertColumn(t, table, "last_login", Timestamp)
+		col := assertColumn(t, table, "last_login", Timestamp, ColumnAttributes{IsNullable: true})
 		assertConstraints(t, c, col)
 	}
 }
@@ -160,17 +147,27 @@ CREATE TABLE orders (
 `
 
 func TestCompiler_ForeignKey(t *testing.T) {
-	parse, err := pg_query.Parse(joinNewline(createUsersTable, addColumn, addForeignKey2))
-	require.Nil(t, err)
-	c := NewCompiler()
-	err = c.ParseStatements(parse)
-	assert.Nil(t, err)
-
+	c := assertParse(t, joinNewline(createUsersTable, addColumn, addForeignKey2))
 	assertTable(t, c, "users")
 	table := assertTable(t, c, "orders")
 	{
-		assertColumn(t, table, "id", Serial)
+		assertColumn(t, table, "id", Serial, ColumnAttributes{IsNullable: false})
 		// TODO
 		//assertConstraints(t, c, col)
 	}
+}
+
+const multiColumnUniqueConstraint = `
+CREATE TABLE unique_constrained (
+	id BIGSERIAL PRIMARY KEY ,
+	uk1 INT NOT NULL,
+	uk2 INT NOT NULL,
+	UNIQUE (uk1, uk2)
+);
+`
+
+func TestCompiler_MultiColumnUniqueConstraint(t *testing.T) {
+	c := assertParse(t, multiColumnUniqueConstraint)
+	fmt.Println(c)
+	_ = c
 }
