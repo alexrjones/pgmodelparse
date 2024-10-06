@@ -86,7 +86,8 @@ type Column struct {
 }
 
 type ColumnAttributes struct {
-	IsNullable bool
+	NotNull bool
+	Pkey    bool
 	//ColumnDefault *pg_query.Node // TODO: parse to native type
 	// Other values include: char max length for varchar,
 	// decimal and timezone precision, etc...
@@ -107,6 +108,14 @@ func (c Columns) JoinColumnNames(sep string) string {
 	return strings.Join(c.Names(), sep)
 }
 
+func (c Columns) SingleElementOrPanic() *Column {
+
+	if len(c) != 1 {
+		panic(fmt.Errorf("wrong number of columns: expected 1, got %d", len(c)))
+	}
+	return c[0]
+}
+
 type Constraint struct {
 	Table      *Table
 	Name       string
@@ -124,15 +133,6 @@ func (c *Constraint) Depends() Columns {
 }
 
 type Constraints []*Constraint
-
-func (cs Constraints) Nullable() bool {
-	for _, c := range cs {
-		if c.Type == ConstraintTypeNotNull || c.Type == ConstraintTypePrimary {
-			return false
-		}
-	}
-	return true
-}
 
 type DropBehaviour int
 
@@ -154,6 +154,4 @@ const (
 	ConstraintTypePrimary ConstraintType = iota
 	ConstraintTypeUnique
 	ConstraintTypeForeignKey
-	ConstraintTypeNotNull
-	ConstraintTypeDefault
 )

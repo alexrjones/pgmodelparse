@@ -94,7 +94,7 @@ func TestCompiler_CreateTable(t *testing.T) {
 
 	table := assertTable(t, c, "users")
 	{
-		col := assertColumn(t, table, "id", Serial, ColumnAttributes{IsNullable: false})
+		col := assertColumn(t, table, "id", Serial, ColumnAttributes{Pkey: true})
 		assertConstraints(t, c, col, Constraint{
 			Table:      table,
 			Name:       "users_pkey",
@@ -103,7 +103,7 @@ func TestCompiler_CreateTable(t *testing.T) {
 		})
 	}
 	{
-		col := assertColumn(t, table, "username", CharacterVarying, ColumnAttributes{IsNullable: false})
+		col := assertColumn(t, table, "username", CharacterVarying, ColumnAttributes{NotNull: true})
 		assertConstraints(t, c, col, Constraint{
 			Table:      table,
 			Name:       "users_username_key",
@@ -112,11 +112,11 @@ func TestCompiler_CreateTable(t *testing.T) {
 		})
 	}
 	{
-		col := assertColumn(t, table, "email", CharacterVarying, ColumnAttributes{IsNullable: false})
+		col := assertColumn(t, table, "email", CharacterVarying, ColumnAttributes{NotNull: true})
 		assertConstraints(t, c, col)
 	}
 	{
-		col := assertColumn(t, table, "created_at", Timestamp, ColumnAttributes{IsNullable: true})
+		col := assertColumn(t, table, "created_at", Timestamp, ColumnAttributes{})
 		assertConstraints(t, c, col)
 	}
 }
@@ -134,82 +134,126 @@ func TestCompiler_AlterTable(t *testing.T) {
 	c := assertParse(t, joinNewline(createUsersTable, addColumn))
 	table := assertTable(t, c, "users")
 	{
-		col := assertColumn(t, table, "last_login", Timestamp, ColumnAttributes{IsNullable: true})
+		col := assertColumn(t, table, "last_login", Timestamp, ColumnAttributes{})
 		assertConstraints(t, c, col)
 	}
 }
 
-const addForeignKey1 = `
-CREATE TABLE orders (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    total_amount DECIMAL(10, 2) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-`
-const addForeignKey2 = `
-CREATE TABLE orders (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    total_amount DECIMAL(10, 2) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-`
+func TestCompiler_CreateTable_ForeignKey(t *testing.T) {
+	const sql = `
+	CREATE TABLE base (
+		id bigserial primary key
+	);
+	
+	CREATE TABLE referrer (
+		id bigint references base(id)
+	);
+	`
 
-func TestCompiler_ForeignKey(t *testing.T) {
-	c := assertParse(t, joinNewline(createUsersTable, addColumn, addForeignKey2))
-	assertTable(t, c, "users")
-	table := assertTable(t, c, "orders")
-	{
-		assertColumn(t, table, "id", Serial, ColumnAttributes{IsNullable: false})
-		// TODO
-		//assertConstraints(t, c, col)
-	}
+	c := assertParse(t, sql)
+	base := assertTable(t, c, "base")
+	baseId := assertColumn(t, base, "id", Bigserial, ColumnAttributes{Pkey: true})
+
+	tab := assertTable(t, c, "referrer")
+	refersId := assertColumn(t, tab, "id", Bigint, ColumnAttributes{})
+	assertConstraints(t, c, refersId, Constraint{
+		Table:         tab,
+		Name:          "referrer_id_fkey",
+		Type:          ConstraintTypeForeignKey,
+		Refers:        Columns{baseId},
+		Constrains:    Columns{refersId},
+		DropBehaviour: DropBehaviourRestrict,
+	})
 }
 
-const multiColumnUniqueConstraint = `
-CREATE TABLE unique_constrained (
-	uk1 INT NOT NULL,
-	uk2 INT NOT NULL,
-	UNIQUE (uk1, uk2)
-);
-`
-
 func TestCompiler_MultiColumnUniqueConstraint(t *testing.T) {
+	const multiColumnUniqueConstraint = `
+	CREATE TABLE unique_constrained (
+		uk1 INT NOT NULL,
+		uk2 INT NOT NULL,
+		UNIQUE (uk1, uk2)
+	);
+	`
 	c := assertParse(t, multiColumnUniqueConstraint)
 	tab := assertTable(t, c, "unique_constrained")
-	uk1 := assertColumn(t, tab, "uk1", Integer, ColumnAttributes{IsNullable: false})
-	uk2 := assertColumn(t, tab, "uk2", Integer, ColumnAttributes{IsNullable: false})
+	uk1 := assertColumn(t, tab, "uk1", Integer, ColumnAttributes{NotNull: true})
+	uk2 := assertColumn(t, tab, "uk2", Integer, ColumnAttributes{NotNull: true})
 	cons, ok := c.Catalog.Depends.ConstraintsByName["unique_constrained_uk1_uk2_key"]
 	require.True(t, ok)
 	assert.ElementsMatch(t, Columns{uk1, uk2}, cons.Constrains)
 }
 
-const dropConstraintNotNull = `
-CREATE TABLE test (
-  test int not null
-);
-
-ALTER TABLE test ALTER COLUMN test DROP NOT NULL;
-`
-
 func TestCompiler_AlterTable_DropConstraintNotNull(t *testing.T) {
+	const dropConstraintNotNull = `
+	CREATE TABLE test (
+	  test int not null
+	);
+	
+	ALTER TABLE test ALTER COLUMN test DROP NOT NULL;
+	`
 	c := assertParse(t, dropConstraintNotNull)
 	tab := assertTable(t, c, "test")
-	assertColumn(t, tab, "test", Integer, ColumnAttributes{IsNullable: true})
+	assertColumn(t, tab, "test", Integer, ColumnAttributes{})
 }
 
-const dropConstraint = `
-CREATE TABLE test (
-  test int primary key
-);
-
-ALTER TABLE test ALTER COLUMN test DROP NOT NULL;
-`
-
 func TestCompiler_AlterTable_DropConstraintNotNull_PrimaryKey_Fails(t *testing.T) {
-	assertParseError(t, dropConstraint, "can't drop not null constraint from primary key column")
+	const sql = `
+	CREATE TABLE test (
+	  test int primary key
+	);
+	
+	ALTER TABLE test ALTER COLUMN test DROP NOT NULL;
+	`
+	assertParseError(t, sql, "can't drop not null constraint from primary key column")
+}
+
+func TestCompiler_AlterTable_AddConstraint_ForeignKey(t *testing.T) {
+	const sql = `
+	CREATE TABLE base (
+		id bigserial primary key
+	);
+	
+	CREATE TABLE referrer (
+		id bigint
+	);
+
+	ALTER TABLE referrer ADD FOREIGN KEY (id) REFERENCES base (id);
+	`
+
+	c := assertParse(t, sql)
+	base := assertTable(t, c, "base")
+	baseId := assertColumn(t, base, "id", Bigserial, ColumnAttributes{Pkey: true})
+
+	tab := assertTable(t, c, "referrer")
+	refersId := assertColumn(t, tab, "id", Bigint, ColumnAttributes{})
+	assertConstraints(t, c, refersId, Constraint{
+		Table:         tab,
+		Name:          "referrer_id_fkey",
+		Type:          ConstraintTypeForeignKey,
+		Refers:        Columns{baseId},
+		Constrains:    Columns{refersId},
+		DropBehaviour: DropBehaviourRestrict,
+	})
+}
+
+func TestCompiler_AlterTable_DropConstraint_ForeignKey(t *testing.T) {
+	const sql = `
+	CREATE TABLE base (
+		id bigserial primary key
+	);
+	
+	CREATE TABLE referrer (
+		id bigint REFERENCES base (id)
+	);
+
+	ALTER TABLE referrer DROP CONSTRAINT referrer_id_fkey;
+	`
+
+	c := assertParse(t, sql)
+	assertTable(t, c, "base")
+	tab := assertTable(t, c, "referrer")
+	refersId := assertColumn(t, tab, "id", Bigint, ColumnAttributes{})
+	assertConstraints(t, c, refersId)
 }
 
 const defaultVariants = `

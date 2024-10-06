@@ -157,7 +157,16 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 			}
 		case pg_query.AlterTableType_AT_DropConstraint:
 			{
-
+				cons, ok := c.Catalog.Depends.ConstraintsByName[atc.AlterTableCmd.Name]
+				if !ok {
+					return fmt.Errorf("while dropping constraint: constraint %s not found", atc.AlterTableCmd.Name)
+				}
+				if cons.Type == ConstraintTypePrimary {
+					pkCol := cons.Constrains.SingleElementOrPanic()
+					pkCol.Attrs.Pkey = false
+				}
+				c.Catalog.Depends.RemoveConstraint(cons)
+				return nil
 			}
 		case pg_query.AlterTableType_AT_DropNotNull:
 			{
@@ -165,17 +174,13 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 				if err != nil {
 					return err
 				}
-				if col.Attrs.IsNullable {
+				if col.Attrs.Pkey {
+					return fmt.Errorf("can't drop not null constraint from primary key column %s.%s", tab.Name, col.Name)
+				}
+				if !col.Attrs.NotNull {
 					return fmt.Errorf("can't drop not null constraint from nullable column %s.%s", tab.Name, col.Name)
 				}
-				if cons, ok := c.Catalog.Depends.ConstraintsByColumn.Get(col); ok {
-					for _, con := range cons {
-						if con.Type == ConstraintTypePrimary {
-							return fmt.Errorf("can't drop not null constraint from primary key column %s.%s", tab.Name, col.Name)
-						}
-					}
-				}
-				col.Attrs.IsNullable = true
+				col.Attrs.NotNull = false
 				return nil
 			}
 		}
@@ -190,9 +195,7 @@ func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 		Table: t,
 		Name:  name,
 		Type:  pgType,
-		Attrs: &ColumnAttributes{
-			IsNullable: true,
-		},
+		Attrs: &ColumnAttributes{},
 	})
 	if err != nil {
 		return err
@@ -290,7 +293,7 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			if err != nil {
 				return err
 			}
-			col.Attrs.IsNullable = false
+			col.Attrs.Pkey = true
 			con := &Constraint{Table: t, Name: name, Type: ConstraintTypePrimary, Constrains: Columns{col}}
 			c.Catalog.Depends.AddConstraint(con)
 			return nil
@@ -301,7 +304,7 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			if err != nil {
 				return err
 			}
-			col.Attrs.IsNullable = false
+			col.Attrs.NotNull = true
 			return nil
 		}
 	case pg_query.ConstrType_CONSTR_DEFAULT:
