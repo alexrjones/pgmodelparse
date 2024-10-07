@@ -1,10 +1,9 @@
-module pgmodelgen
+module github.com/henges/pgmodelparse
 
 go 1.22.1
 
 require (
 	github.com/davecgh/go-spew v1.1.1
-	github.com/google/go-cmp v0.6.0
 	github.com/pganalyze/pg_query_go/v5 v5.1.0
 	github.com/rs/zerolog v1.33.0
 	github.com/samber/lo v1.39.0

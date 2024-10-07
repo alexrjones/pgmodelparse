@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/henges/pgmodelparse/collections"
 	pg_query "github.com/pganalyze/pg_query_go/v5"
-	"pgmodelgen/collections"
 	"slices"
 	"strings"
 )

@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"pgmodelgen/collections"
+	"github.com/henges/pgmodelparse/collections"
 	"slices"
 	"strings"
 )
@@ -135,7 +135,7 @@ func (c *Constraint) OnCreate() {
 	case ConstraintTypePrimary:
 		{
 			for _, col := range c.Constrains {
-				col.Attrs.Pkey = false
+				col.Attrs.Pkey = true
 			}
 		}
 	}
