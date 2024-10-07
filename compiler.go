@@ -4,6 +4,7 @@ import (
 	"fmt"
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"pgmodelgen/collections"
+	"slices"
 	"strings"
 )
 
@@ -54,6 +55,26 @@ func (c *Compiler) ParseStatements(parse *pg_query.ParseResult) error {
 				err := c.AlterTable(p.AlterTableStmt)
 				if err != nil {
 					return fmt.Errorf("while altering table: %w", err)
+				}
+			}
+		case *pg_query.Node_DropStmt:
+			{
+				dropBehaviour := DropBehaviourRestrict
+				if p.DropStmt.Behavior == pg_query.DropBehavior_DROP_CASCADE {
+					dropBehaviour = DropBehaviourCascade
+				}
+				switch p.DropStmt.RemoveType {
+				case pg_query.ObjectType_OBJECT_TABLE:
+					{
+						for _, tgt := range p.DropStmt.Objects {
+							l := tgt.Node.(*pg_query.Node_List)
+							schema, table := TableNameFromNodeList(l.List)
+							err := c.DropTable(schema, table, dropBehaviour)
+							if err != nil {
+								return err
+							}
+						}
+					}
 				}
 			}
 		}
@@ -109,6 +130,36 @@ func (c *Compiler) CreateTable(stmt *pg_query.CreateStmt) error {
 	return nil
 }
 
+func (c *Compiler) DropTable(schema, table string, behav DropBehaviour) error {
+
+	tab, err := c.FindTableFromSchemaAndName(schema, table)
+	if err != nil {
+		return err
+	}
+	consToRemove := make(Constraints, 0, 5)
+	for _, col := range tab.Columns.List() {
+		cons, ok := c.Catalog.Depends.ConstraintsByColumn.Get(col)
+		if !ok {
+			continue
+		}
+		for _, con := range cons {
+			if con.Type == ConstraintTypeForeignKey &&
+				slices.Contains(con.Refers, col) &&
+				behav != DropBehaviourCascade {
+				return fmt.Errorf("can't drop table %s because constraint %s refers to it and cascade was not specified",
+					tab.Name, con.Name)
+			}
+			consToRemove = append(consToRemove, con)
+		}
+	}
+	for _, con := range consToRemove {
+		c.Catalog.Depends.RemoveConstraint(con)
+	}
+	sch, _ := c.Catalog.Schemas.Get(tab.Schema) // Must be ok
+	sch.Tables.Remove(tab.Name)
+	return nil
+}
+
 func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 
 	tab, err := c.FindTableFromRangeVar(stmt.Relation)
@@ -160,10 +211,6 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 				cons, ok := c.Catalog.Depends.ConstraintsByName[atc.AlterTableCmd.Name]
 				if !ok {
 					return fmt.Errorf("while dropping constraint: constraint %s not found", atc.AlterTableCmd.Name)
-				}
-				if cons.Type == ConstraintTypePrimary {
-					pkCol := cons.Constrains.SingleElementOrPanic()
-					pkCol.Attrs.Pkey = false
 				}
 				c.Catalog.Depends.RemoveConstraint(cons)
 				return nil
@@ -239,6 +286,10 @@ func (c *Compiler) FindTableFromRangeVar(r *pg_query.RangeVar) (*Table, error) {
 
 	name := r.Relname
 	schemaName := r.Schemaname
+	return c.FindTableFromSchemaAndName(schemaName, name)
+}
+
+func (c *Compiler) FindTableFromSchemaAndName(schemaName, name string) (*Table, error) {
 	if schemaName == "" {
 		schemaName = c.SearchPath
 	}
@@ -293,7 +344,6 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			if err != nil {
 				return err
 			}
-			col.Attrs.Pkey = true
 			con := &Constraint{Table: t, Name: name, Type: ConstraintTypePrimary, Constrains: Columns{col}}
 			c.Catalog.Depends.AddConstraint(con)
 			return nil
@@ -470,6 +520,19 @@ func (c *Compiler) ParseExpr(n *pg_query.Node) error {
 	}
 
 	return nil
+}
+
+func TableNameFromNodeList(l *pg_query.List) (schema string, table string) {
+
+	if len(l.Items) == 1 {
+		table = StringOrPanic(l.Items[0])
+		return
+	}
+	if len(l.Items) == 2 {
+		schema = StringOrPanic(l.Items[0])
+		table = StringOrPanic(l.Items[1])
+	}
+	return
 }
 
 func StringsOrPanic(ns []*pg_query.Node) []string {

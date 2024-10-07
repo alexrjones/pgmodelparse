@@ -256,6 +256,28 @@ func TestCompiler_AlterTable_DropConstraint_ForeignKey(t *testing.T) {
 	assertConstraints(t, c, refersId)
 }
 
+func TestCompiler_Drop_Table(t *testing.T) {
+	const sql = `
+	CREATE SCHEMA base;
+
+	CREATE TABLE base.base (
+		id bigserial primary key
+	);
+	
+	CREATE TABLE second ();
+	
+	DROP TABLE base.base, second;
+	`
+
+	c := assertParse(t, sql)
+	sch1, ok := c.Catalog.Schemas.Get("public")
+	require.True(t, ok)
+	assert.Len(t, sch1.Tables.List(), 0)
+	sch2, ok := c.Catalog.Schemas.Get("base")
+	require.True(t, ok)
+	assert.Len(t, sch2.Tables.List(), 0)
+}
+
 const defaultVariants = `
 CREATE TABLE defaulters (
     time1 timestamptz default now(),

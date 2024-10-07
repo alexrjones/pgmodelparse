@@ -23,6 +23,7 @@ func (d *Depends) AddConstraint(cons *Constraint) {
 		d.ConstraintsByColumn.Add(col, cons)
 	}
 	d.ConstraintsByName[cons.Name] = cons
+	cons.OnCreate()
 }
 
 func (d *Depends) RemoveConstraint(cons *Constraint) {
@@ -30,6 +31,7 @@ func (d *Depends) RemoveConstraint(cons *Constraint) {
 		d.ConstraintsByColumn.Remove(col)
 	}
 	delete(d.ConstraintsByName, cons.Name)
+	cons.OnRemove()
 }
 
 func (c *Catalog) AddTable(t *Table) error {
@@ -125,6 +127,30 @@ type Constraint struct {
 	// DropBehaviour explains how this constraint should behave
 	// when one of its dependencies is dropped.
 	DropBehaviour DropBehaviour
+}
+
+func (c *Constraint) OnCreate() {
+
+	switch c.Type {
+	case ConstraintTypePrimary:
+		{
+			for _, col := range c.Constrains {
+				col.Attrs.Pkey = false
+			}
+		}
+	}
+}
+
+func (c *Constraint) OnRemove() {
+
+	switch c.Type {
+	case ConstraintTypePrimary:
+		{
+			for _, col := range c.Constrains {
+				col.Attrs.Pkey = false
+			}
+		}
+	}
 }
 
 func (c *Constraint) Depends() Columns {
