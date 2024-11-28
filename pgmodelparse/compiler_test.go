@@ -1,12 +1,13 @@
-package main
+package pgmodelparse
 
 import (
+	"strings"
+	"testing"
+
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"strings"
-	"testing"
 )
 
 func assertParse(t *testing.T, stmts string) *Compiler {
@@ -60,9 +61,9 @@ func assertColumn(t *testing.T, tab *Table, name string, pgtype *PostgresType, a
 func assertConstraints(t *testing.T, c *Compiler, col *Column, cons ...Constraint) {
 	t.Helper()
 
-	actualCons, ok := c.Catalog.Depends.ConstraintsByColumn.Get(col)
+	actualCons, ok := c.Catalog.PgConstraint.ByColumn.Get(col)
 	if len(cons) == 0 {
-		assert.Len(t, actualCons, 0)
+		assert.Len(t, actualCons, 0, "expected 0 constraints, but got %d", len(actualCons))
 		return
 	}
 	require.True(t, ok)
@@ -72,7 +73,7 @@ func assertConstraints(t *testing.T, c *Compiler, col *Column, cons ...Constrain
 	expectedConstraints := make(Constraints, 0, len(cons))
 	for _, con := range cons {
 		var actualConstraint *Constraint
-		actualConstraint, ok = c.Catalog.Depends.ConstraintsByName[con.Name]
+		actualConstraint, ok = c.Catalog.PgConstraint.ByName[con.FQName()]
 		require.True(t, ok, "no constraint with name %s found, actual constraints are: %v", con.Name, consNames)
 		assert.Equal(t, con, *actualConstraint)
 		expectedConstraints = append(expectedConstraints, actualConstraint)
@@ -178,9 +179,14 @@ func TestCompiler_MultiColumnUniqueConstraint(t *testing.T) {
 	tab := assertTable(t, c, "unique_constrained")
 	uk1 := assertColumn(t, tab, "uk1", Integer, ColumnAttributes{NotNull: true})
 	uk2 := assertColumn(t, tab, "uk2", Integer, ColumnAttributes{NotNull: true})
-	cons, ok := c.Catalog.Depends.ConstraintsByName["unique_constrained_uk1_uk2_key"]
-	require.True(t, ok)
-	assert.ElementsMatch(t, Columns{uk1, uk2}, cons.Constrains)
+	expectedCon := Constraint{
+		Table:      tab,
+		Name:       "unique_constrained_uk1_uk2_key",
+		Type:       ConstraintTypeUnique,
+		Constrains: Columns{uk1, uk2},
+	}
+	assertConstraints(t, c, uk1, expectedCon)
+	assertConstraints(t, c, uk2, expectedCon)
 }
 
 func TestCompiler_AlterTable_DropConstraintNotNull(t *testing.T) {
@@ -291,5 +297,9 @@ CREATE TABLE defaulters (
 func TestCompiler_DefaultVariants(t *testing.T) {
 	assertParse(t, defaultVariants)
 }
+
+// TODO:
+// CREATE TABLE (... PRIMARY KEY(col1, col2) ...)
+// CREATE TABLE (... col int null ...)
 
 //func TestCompiler_

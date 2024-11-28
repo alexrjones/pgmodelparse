@@ -1,11 +1,12 @@
-package main
+package pgmodelparse
 
 import (
 	"fmt"
-	"github.com/henges/pgmodelparse/collections"
-	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"slices"
 	"strings"
+
+	"github.com/henges/pgmodelparse/collections"
+	pg_query "github.com/pganalyze/pg_query_go/v5"
 )
 
 type Compiler struct {
@@ -18,9 +19,11 @@ func NewCompiler() *Compiler {
 		SearchPath: "public",
 		Catalog: &Catalog{
 			Schemas: collections.NewOrderedMap[string, *Schema](),
-			Depends: &Depends{
-				ConstraintsByColumn: collections.NewMultimap[*Column, *Constraint](),
-				ConstraintsByName:   make(map[string]*Constraint),
+			PgConstraint: &PgConstraint{
+				ByColumn:   collections.NewMultimap[*Column, *Constraint](),
+				Constrains: collections.NewMultimap[*Column, *Constraint](),
+				Refers:     collections.NewMultimap[*Column, *Constraint](),
+				ByName:     make(map[string]*Constraint),
 			},
 		},
 	}
@@ -30,6 +33,15 @@ func NewCompiler() *Compiler {
 	}
 	c.Catalog.Schemas.Add(defaultSchema.Name, defaultSchema)
 	return c
+}
+
+func (c *Compiler) ParseRaw(sqlFile string) error {
+
+	parse, err := pg_query.Parse(sqlFile)
+	if err != nil {
+		return err
+	}
+	return c.ParseStatements(parse)
 }
 
 func (c *Compiler) ParseStatements(parse *pg_query.ParseResult) error {
@@ -100,10 +112,7 @@ func (c *Compiler) CreateSchema(stmt *pg_query.CreateSchemaStmt) error {
 
 func (c *Compiler) CreateTable(stmt *pg_query.CreateStmt) error {
 	name := stmt.Relation.Relname
-	schemaName := stmt.Relation.Schemaname
-	if schemaName == "" {
-		schemaName = c.SearchPath
-	}
+	schemaName := c.SchemaOrSearchPath(stmt.Relation.Schemaname)
 	table := NewTable(name, schemaName)
 	err := c.Catalog.AddTable(table)
 	if err != nil {
@@ -115,14 +124,14 @@ func (c *Compiler) CreateTable(stmt *pg_query.CreateStmt) error {
 			{
 				err = c.DefineColumn(table, p.ColumnDef)
 				if err != nil {
-					return err
+					return fmt.Errorf("defining column on table %s.%s: %w", table.Schema, table.Name, err)
 				}
 			}
 		case *pg_query.Node_Constraint:
 			{
 				err = c.DefineConstraint(table, "", p.Constraint)
 				if err != nil {
-					return err
+					return fmt.Errorf("defining constraint on table %s.%s: %w", table.Schema, table.Name, err)
 				}
 			}
 		}
@@ -138,7 +147,7 @@ func (c *Compiler) DropTable(schema, table string, behav DropBehaviour) error {
 	}
 	consToRemove := make(Constraints, 0, 5)
 	for _, col := range tab.Columns.List() {
-		cons, ok := c.Catalog.Depends.ConstraintsByColumn.Get(col)
+		cons, ok := c.Catalog.PgConstraint.ByColumn.Get(col)
 		if !ok {
 			continue
 		}
@@ -153,7 +162,7 @@ func (c *Compiler) DropTable(schema, table string, behav DropBehaviour) error {
 		}
 	}
 	for _, con := range consToRemove {
-		c.Catalog.Depends.RemoveConstraint(con)
+		c.Catalog.PgConstraint.RemoveConstraint(con)
 	}
 	sch, _ := c.Catalog.Schemas.Get(tab.Schema) // Must be ok
 	sch.Tables.Remove(tab.Name)
@@ -208,11 +217,12 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 			}
 		case pg_query.AlterTableType_AT_DropConstraint:
 			{
-				cons, ok := c.Catalog.Depends.ConstraintsByName[atc.AlterTableCmd.Name]
+				fqname := tab.Schema + "." + atc.AlterTableCmd.Name
+				cons, ok := c.Catalog.PgConstraint.ByName[fqname]
 				if !ok {
-					return fmt.Errorf("while dropping constraint: constraint %s not found", atc.AlterTableCmd.Name)
+					return fmt.Errorf("while dropping constraint: constraint %s not found", fqname)
 				}
-				c.Catalog.Depends.RemoveConstraint(cons)
+				c.Catalog.PgConstraint.RemoveConstraint(cons)
 				return nil
 			}
 		case pg_query.AlterTableType_AT_DropNotNull:
@@ -260,7 +270,7 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 	if !ok {
 		return fmt.Errorf("column %s does not exist", colName)
 	}
-	depends, _ := c.Catalog.Depends.ConstraintsByColumn.Get(col)
+	depends, _ := c.Catalog.PgConstraint.ByColumn.Get(col)
 	var funcs []func()
 	for _, con := range depends {
 		if con.DropBehaviour == DropBehaviourRestrict {
@@ -268,7 +278,7 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 				return fmt.Errorf("can't drop %s because %s depends on it", col.Name, con.Name)
 			}
 			funcs = append(funcs, func() {
-				c.Catalog.Depends.RemoveConstraint(con)
+				c.Catalog.PgConstraint.RemoveConstraint(con)
 			})
 		}
 	}
@@ -276,7 +286,7 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 	for _, fn := range funcs {
 		fn()
 	}
-	c.Catalog.Depends.ConstraintsByColumn.Remove(col)
+	c.Catalog.PgConstraint.ByColumn.Remove(col)
 	t.Columns.Remove(col.Name)
 	return nil
 }
@@ -290,9 +300,7 @@ func (c *Compiler) FindTableFromRangeVar(r *pg_query.RangeVar) (*Table, error) {
 }
 
 func (c *Compiler) FindTableFromSchemaAndName(schemaName, name string) (*Table, error) {
-	if schemaName == "" {
-		schemaName = c.SearchPath
-	}
+	schemaName = c.SchemaOrSearchPath(schemaName)
 	sch, ok := c.Catalog.Schemas.Get(schemaName)
 	if !ok {
 		return nil, fmt.Errorf("couldn't find schema %s", schemaName)
@@ -336,16 +344,27 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 	switch v.Contype {
 	case pg_query.ConstrType_CONSTR_PRIMARY:
 		{
+			var cols Columns
+			for _, k := range v.Keys {
+				col, err := ColumnFromColName(t, StringOrPanic(k))
+				if err != nil {
+					return err
+				}
+				cols = append(cols, col)
+			}
+			if len(cols) == 0 {
+				col, err := ColumnFromColName(t, colName)
+				if err != nil {
+					return err
+				}
+				cols = append(cols, col)
+			}
 			name := v.Conname
 			if name == "" {
 				name = t.Name + "_" + "pkey"
 			}
-			col, err := ColumnFromColName(t, colName)
-			if err != nil {
-				return err
-			}
-			con := &Constraint{Table: t, Name: name, Type: ConstraintTypePrimary, Constrains: Columns{col}}
-			c.Catalog.Depends.AddConstraint(con)
+			con := &Constraint{Table: t, Name: name, Type: ConstraintTypePrimary, Constrains: cols}
+			c.Catalog.PgConstraint.AddConstraint(con)
 			return nil
 		}
 	case pg_query.ConstrType_CONSTR_NOTNULL:
@@ -393,7 +412,7 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			if name == "" {
 				name = strings.Join([]string{t.Name, constrainsCols.JoinColumnNames("_"), "key"}, "_")
 			}
-			c.Catalog.Depends.AddConstraint(&Constraint{Table: t,
+			c.Catalog.PgConstraint.AddConstraint(&Constraint{Table: t,
 				Name:       name,
 				Type:       ConstraintTypeUnique,
 				Constrains: constrainsCols,
@@ -413,7 +432,16 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 				}
 				refers = append(refers, col)
 			}
-			constrainsCols := make(Columns, 0, len(v.FkAttrs))
+			if len(v.PkAttrs) == 0 {
+				// used by eg 'FOREIGN KEY (my_field) REFERENCES schema.table';
+				// in this instance the FK refers to the PK of the other table
+				cols, err := c.FindPrimaryKeyColumns(schema, table)
+				if err != nil {
+					return err
+				}
+				refers = cols
+			}
+			constrainsCols := make(Columns, 0, len(refers))
 			for _, colRef := range v.FkAttrs {
 				colName := StringOrPanic(colRef)
 				col, ok := t.Columns.Get(colName)
@@ -437,7 +465,7 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			if name == "" && len(constrainsCols) > 0 {
 				name = strings.Join([]string{t.Name, constrainsCols.JoinColumnNames("_"), "fkey"}, "_")
 			}
-			c.Catalog.Depends.AddConstraint(&Constraint{
+			c.Catalog.PgConstraint.AddConstraint(&Constraint{
 				Table:         t,
 				Type:          ConstraintTypeForeignKey,
 				DropBehaviour: DropBehaviourRestrict,
@@ -447,15 +475,23 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			})
 			return nil
 		}
+	case pg_query.ConstrType_CONSTR_NULL:
+		{
+			// Nothing to do? That's the default
+			return nil
+		}
+	case pg_query.ConstrType_CONSTR_CHECK:
+		{
+			// Nothing to do for checked constraints yet
+			return nil
+		}
 	}
 	return fmt.Errorf("not yet able to process constraint type %v", v.Contype)
 }
 
 func (c *Compiler) FindColumn(schema, table, name string) (*Column, error) {
 
-	if schema == "" {
-		schema = c.SearchPath
-	}
+	schema = c.SchemaOrSearchPath(schema)
 	s, ok := c.Catalog.Schemas.Get(schema)
 	if !ok {
 		return nil, fmt.Errorf("schema %s not found", schema)
@@ -471,6 +507,25 @@ func (c *Compiler) FindColumn(schema, table, name string) (*Column, error) {
 	return col, nil
 }
 
+func (c *Compiler) FindPrimaryKeyColumns(schema, table string) ([]*Column, error) {
+	schema = c.SchemaOrSearchPath(schema)
+	s, ok := c.Catalog.Schemas.Get(schema)
+	if !ok {
+		return nil, fmt.Errorf("schema %s not found", schema)
+	}
+	t, ok := s.Tables.Get(table)
+	if !ok {
+		return nil, fmt.Errorf("table %s not found", table)
+	}
+	ret := make([]*Column, 0, 1)
+	for _, col := range t.Columns.List() {
+		if col.Attrs.Pkey {
+			ret = append(ret, col)
+		}
+	}
+	return ret, nil
+}
+
 func (c *Compiler) ParseExpr(n *pg_query.Node) error {
 
 	switch x := n.Node.(type) {
@@ -478,18 +533,18 @@ func (c *Compiler) ParseExpr(n *pg_query.Node) error {
 		{
 			// A value function is e.g. CURRENT_TIMESTAMP -
 			// looks like a value but behaves like a function
-			fmt.Println(x.SqlvalueFunction.Op)
+			//fmt.Println(x.SqlvalueFunction.Op)
 		}
 	case *pg_query.Node_FuncCall:
 		{
 			// Function invocation e.g. NOW()
-			fmt.Println(StringsOrPanic(x.FuncCall.Funcname))
+			//fmt.Println(StringsOrPanic(x.FuncCall.Funcname))
 			// TODO: x.FuncCall.Args...
 		}
 	case *pg_query.Node_AConst:
 		{
 			if x.AConst.Isnull {
-				fmt.Println("<nil>")
+				//fmt.Println("<nil>")
 				return nil
 			}
 
@@ -497,29 +552,40 @@ func (c *Compiler) ParseExpr(n *pg_query.Node) error {
 			switch sv := x.AConst.Val.(type) {
 			case *pg_query.A_Const_Sval:
 				{
-					fmt.Println(sv.Sval.Sval)
+					//fmt.Println(sv.Sval.Sval)
 				}
 			case *pg_query.A_Const_Boolval:
 				{
-					fmt.Println(sv.Boolval.Boolval)
+					//fmt.Println(sv.Boolval.Boolval)
 				}
 			case *pg_query.A_Const_Ival:
 				{
-					fmt.Println(sv.Ival.Ival)
+					//fmt.Println(sv.Ival.Ival)
 				}
 			case *pg_query.A_Const_Fval:
 				{
-					fmt.Println(sv.Fval.Fval)
+					//fmt.Println(sv.Fval.Fval)
 				}
 			case *pg_query.A_Const_Bsval:
 				{
-					fmt.Println(sv.Bsval.Bsval)
+					//fmt.Println(sv.Bsval.Bsval)
+				}
+			default:
+				{
+					_ = sv
 				}
 			}
 		}
 	}
 
 	return nil
+}
+
+func (c *Compiler) SchemaOrSearchPath(schema string) string {
+	if schema == "" {
+		return c.SearchPath
+	}
+	return schema
 }
 
 func TableNameFromNodeList(l *pg_query.List) (schema string, table string) {

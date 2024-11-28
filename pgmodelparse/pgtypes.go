@@ -1,9 +1,10 @@
-package main
+package pgmodelparse
 
 import (
-	"github.com/samber/lo"
 	"regexp"
 	"strings"
+
+	"github.com/samber/lo"
 )
 
 type PostgresType struct {

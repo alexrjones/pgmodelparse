@@ -76,6 +76,11 @@ func (m *Multimap[K, V]) RemoveValue(key K, value V) {
 	for i, v := range s {
 		if v == value {
 			s = append(s[:i], s[min(i+1, len(s)):]...)
+			if len(s) == 0 {
+				delete(m.m, key)
+			} else {
+				m.m[key] = s
+			}
 			return
 		}
 	}

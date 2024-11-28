@@ -1,36 +1,49 @@
-package main
+package pgmodelparse
 
 import (
 	"fmt"
-	"github.com/henges/pgmodelparse/collections"
 	"slices"
 	"strings"
+
+	"github.com/henges/pgmodelparse/collections"
 )
 
 type Catalog struct {
-	Schemas *collections.OrderedMap[string, *Schema]
-	Depends *Depends
+	Schemas      *collections.OrderedMap[string, *Schema]
+	PgConstraint *PgConstraint
 }
 
-type Depends struct {
-	ConstraintsByColumn *collections.Multimap[*Column, *Constraint]
-	ConstraintsByName   map[string]*Constraint
+type PgConstraint struct {
+	ByColumn   *collections.Multimap[*Column, *Constraint]
+	Constrains *collections.Multimap[*Column, *Constraint]
+	Refers     *collections.Multimap[*Column, *Constraint]
+	ByName     map[string]*Constraint
 }
 
-func (d *Depends) AddConstraint(cons *Constraint) {
+func (d *PgConstraint) AddConstraint(cons *Constraint) {
 
-	for _, col := range cons.Depends() {
-		d.ConstraintsByColumn.Add(col, cons)
+	for _, col := range cons.Constrains {
+		d.ByColumn.Add(col, cons)
+		d.Constrains.Add(col, cons)
 	}
-	d.ConstraintsByName[cons.Name] = cons
+	for _, col := range cons.Refers {
+		d.ByColumn.Add(col, cons)
+		d.Refers.Add(col, cons)
+	}
+	d.ByName[cons.FQName()] = cons
 	cons.OnCreate()
 }
 
-func (d *Depends) RemoveConstraint(cons *Constraint) {
-	for _, col := range cons.Depends() {
-		d.ConstraintsByColumn.Remove(col)
+func (d *PgConstraint) RemoveConstraint(cons *Constraint) {
+	for _, col := range cons.Constrains {
+		d.ByColumn.RemoveValue(col, cons)
+		d.Constrains.RemoveValue(col, cons)
 	}
-	delete(d.ConstraintsByName, cons.Name)
+	for _, col := range cons.Refers {
+		d.ByColumn.RemoveValue(col, cons)
+		d.Refers.RemoveValue(col, cons)
+	}
+	delete(d.ByName, cons.FQName())
 	cons.OnRemove()
 }
 
@@ -87,12 +100,22 @@ type Column struct {
 	Attrs *ColumnAttributes
 }
 
+func (c *Column) FQName() string {
+
+	return c.Table.Schema + "." + c.Table.Name + "." + c.Name
+}
+
 type ColumnAttributes struct {
 	NotNull bool
 	Pkey    bool
 	//ColumnDefault *pg_query.Node // TODO: parse to native type
 	// Other values include: char max length for varchar,
 	// decimal and timezone precision, etc...
+}
+
+func (ca ColumnAttributes) IsNotNull() bool {
+
+	return ca.NotNull || ca.Pkey
 }
 
 type Columns []*Column
@@ -103,6 +126,19 @@ func (c Columns) Names() []string {
 		names = append(names, col.Name)
 	}
 	return names
+}
+
+func (c Columns) FQNames() []string {
+	names := make([]string, 0, len(c))
+	for _, col := range c {
+		names = append(names, col.FQName())
+	}
+	return names
+}
+
+func (c Columns) JoinFQNames(sep string) string {
+
+	return strings.Join(c.FQNames(), sep)
 }
 
 func (c Columns) JoinColumnNames(sep string) string {
@@ -127,6 +163,11 @@ type Constraint struct {
 	// DropBehaviour explains how this constraint should behave
 	// when one of its dependencies is dropped.
 	DropBehaviour DropBehaviour
+}
+
+func (c *Constraint) FQName() string {
+
+	return c.Table.Schema + "." + c.Name
 }
 
 func (c *Constraint) OnCreate() {
@@ -181,3 +222,17 @@ const (
 	ConstraintTypeUnique
 	ConstraintTypeForeignKey
 )
+
+func (c ConstraintType) String() string {
+
+	switch c {
+	case ConstraintTypePrimary:
+		return "Primary"
+	case ConstraintTypeUnique:
+		return "Unique"
+	case ConstraintTypeForeignKey:
+		return "Foreign Key"
+	}
+	panic(c)
+
+}

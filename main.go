@@ -3,11 +3,13 @@ package main
 import (
 	_ "embed"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
-	pg_query "github.com/pganalyze/pg_query_go/v5"
-	"github.com/rs/zerolog/log"
 	"io"
 	"os"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/henges/pgmodelparse/pgmodelparse"
+	pg_query "github.com/pganalyze/pg_query_go/v5"
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
@@ -27,7 +29,7 @@ func main() {
 		log.Fatal().Err(err).Send()
 	}
 
-	compiler := NewCompiler()
+	compiler := pgmodelparse.NewCompiler()
 	parse, err := pg_query.Parse(string(b))
 	if err != nil {
 		log.Fatal().Err(err).Send()
