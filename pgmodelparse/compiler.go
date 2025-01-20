@@ -424,6 +424,10 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			var refers []*Column
 			schema := v.Pktable.Schemaname
 			table := v.Pktable.Relname
+			tableObj, err := c.FindTable(schema, table)
+			if err != nil {
+				return err
+			}
 			for _, colRef := range v.PkAttrs {
 				colName := StringOrPanic(colRef)
 				col, err := c.FindColumn(schema, table, colName)
@@ -470,6 +474,7 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 				Type:          ConstraintTypeForeignKey,
 				DropBehaviour: DropBehaviourRestrict,
 				Name:          name,
+				RefersTable:   tableObj,
 				Refers:        refers,
 				Constrains:    constrainsCols,
 			})
@@ -489,7 +494,7 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 	return fmt.Errorf("not yet able to process constraint type %v", v.Contype)
 }
 
-func (c *Compiler) FindColumn(schema, table, name string) (*Column, error) {
+func (c *Compiler) FindTable(schema, table string) (*Table, error) {
 
 	schema = c.SchemaOrSearchPath(schema)
 	s, ok := c.Catalog.Schemas.Get(schema)
@@ -499,6 +504,15 @@ func (c *Compiler) FindColumn(schema, table, name string) (*Column, error) {
 	t, ok := s.Tables.Get(table)
 	if !ok {
 		return nil, fmt.Errorf("table %s not found", table)
+	}
+	return t, nil
+}
+
+func (c *Compiler) FindColumn(schema, table, name string) (*Column, error) {
+
+	t, err := c.FindTable(schema, table)
+	if err != nil {
+		return nil, err
 	}
 	col, ok := t.Columns.Get(name)
 	if !ok {

@@ -155,11 +155,12 @@ func (c Columns) SingleElementOrPanic() *Column {
 }
 
 type Constraint struct {
-	Table      *Table
-	Name       string
-	Type       ConstraintType // Primary, FK, etc
-	Refers     Columns
-	Constrains Columns
+	Table       *Table
+	Name        string
+	Type        ConstraintType // Primary, FK, etc
+	RefersTable *Table
+	Refers      Columns
+	Constrains  Columns
 	// DropBehaviour explains how this constraint should behave
 	// when one of its dependencies is dropped.
 	DropBehaviour DropBehaviour
