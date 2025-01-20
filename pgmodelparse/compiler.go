@@ -252,7 +252,7 @@ func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 		Table: t,
 		Name:  name,
 		Type:  pgType,
-		Attrs: &ColumnAttributes{},
+		Attrs: &ColumnAttributes{HasSequence: pgType.IsSerial},
 	})
 	if err != nil {
 		return err
@@ -378,7 +378,7 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 		}
 	case pg_query.ConstrType_CONSTR_DEFAULT:
 		{
-			_, err := ColumnFromColName(t, colName)
+			col, err := ColumnFromColName(t, colName)
 			if err != nil {
 				return err
 			}
@@ -386,7 +386,7 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			if err != nil {
 				return err
 			}
-			//col.Attrs.ColumnDefault = v.RawExpr
+			col.Attrs.HasExplicitDefault = true
 			return nil
 		}
 	case pg_query.ConstrType_CONSTR_UNIQUE:

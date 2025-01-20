@@ -14,10 +14,15 @@ type Catalog struct {
 }
 
 type PgConstraint struct {
-	ByColumn   *collections.Multimap[*Column, *Constraint]
+	// ByColumn holds all constraints that reference a given column
+	// either as referee or referent
+	ByColumn *collections.Multimap[*Column, *Constraint]
+	// Constraints holds all constraints that apply to a column (column is referee)
 	Constrains *collections.Multimap[*Column, *Constraint]
-	Refers     *collections.Multimap[*Column, *Constraint]
-	ByName     map[string]*Constraint
+	// Refers holds all constraints that refer to a column (column is referent)
+	Refers *collections.Multimap[*Column, *Constraint]
+	// ByName holds all constraints by their fully-qualified name
+	ByName map[string]*Constraint
 }
 
 func (d *PgConstraint) AddConstraint(cons *Constraint) {
@@ -93,6 +98,14 @@ func (t *Table) AddColumn(c *Column) error {
 	return nil
 }
 
+func (t *Table) FQName() string {
+
+	if t.Schema == "" {
+		return t.Name
+	}
+	return fmt.Sprintf("%s.%s", t.Schema, t.Name)
+}
+
 type Column struct {
 	Table *Table
 	Name  string
@@ -106,8 +119,10 @@ func (c *Column) FQName() string {
 }
 
 type ColumnAttributes struct {
-	NotNull bool
-	Pkey    bool
+	NotNull            bool
+	Pkey               bool
+	HasSequence        bool
+	HasExplicitDefault bool
 	//ColumnDefault *pg_query.Node // TODO: parse to native type
 	// Other values include: char max length for varchar,
 	// decimal and timezone precision, etc...
@@ -116,6 +131,11 @@ type ColumnAttributes struct {
 func (ca ColumnAttributes) IsNotNull() bool {
 
 	return ca.NotNull || ca.Pkey
+}
+
+func (ca ColumnAttributes) IsRequired() bool {
+
+	return ca.IsNotNull() && !(ca.HasExplicitDefault || ca.HasSequence)
 }
 
 type Columns []*Column
