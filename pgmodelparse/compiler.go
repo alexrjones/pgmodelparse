@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/henges/pgmodelparse/collections"
+	"github.com/alexrjones/pgmodelparse/collections"
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 )
 

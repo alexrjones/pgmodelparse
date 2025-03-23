@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/alexrjones/pgmodelparse/pgmodelparse"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/henges/pgmodelparse/pgmodelparse"
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"github.com/rs/zerolog/log"
 )

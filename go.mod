@@ -1,4 +1,4 @@
-module github.com/henges/pgmodelparse
+module github.com/alexrjones/pgmodelparse
 
 go 1.22.1
 

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/henges/pgmodelparse/collections"
+	"github.com/alexrjones/pgmodelparse/collections"
 )
 
 type Catalog struct {
