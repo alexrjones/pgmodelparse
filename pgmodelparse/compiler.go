@@ -3,6 +3,7 @@ package pgmodelparse
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/henges/pgmodelparse/collections"
@@ -382,11 +383,12 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			if err != nil {
 				return err
 			}
-			err = c.ParseExpr(v.RawExpr)
+			expr, err := c.ExprToString(v.RawExpr)
 			if err != nil {
 				return err
 			}
 			col.Attrs.HasExplicitDefault = true
+			col.Attrs.ColumnDefault = expr
 			return nil
 		}
 	case pg_query.ConstrType_CONSTR_UNIQUE:
@@ -540,59 +542,80 @@ func (c *Compiler) FindPrimaryKeyColumns(schema, table string) ([]*Column, error
 	return ret, nil
 }
 
-func (c *Compiler) ParseExpr(n *pg_query.Node) error {
+func (c *Compiler) ExprToString(n *pg_query.Node) (string, error) {
 
 	switch x := n.Node.(type) {
 	case *pg_query.Node_SqlvalueFunction:
 		{
 			// A value function is e.g. CURRENT_TIMESTAMP -
 			// looks like a value but behaves like a function
-			//fmt.Println(x.SqlvalueFunction.Op)
+			return strings.TrimPrefix(x.SqlvalueFunction.Op.String(), "SVFOP_"), nil
 		}
 	case *pg_query.Node_FuncCall:
 		{
 			// Function invocation e.g. NOW()
 			//fmt.Println(StringsOrPanic(x.FuncCall.Funcname))
 			// TODO: x.FuncCall.Args...
+			return fmt.Sprintf("%s(%s)", strings.Join(StringsOrPanic(x.FuncCall.Funcname), "."), strings.Join(StringsOrPanic(x.FuncCall.Args), ", ")), nil
+		}
+	case *pg_query.Node_TypeCast:
+		{
+			typeName := strings.Join(StringsOrPanic(x.TypeCast.TypeName.Names), ".")
+			aConst, ok := x.TypeCast.Arg.Node.(*pg_query.Node_AConst)
+			if !ok {
+				return "", nil
+			}
+			val, err := c.ConstantAsString(aConst.AConst)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("%s::%s", val, typeName), nil
 		}
 	case *pg_query.Node_AConst:
 		{
-			if x.AConst.Isnull {
-				//fmt.Println("<nil>")
-				return nil
-			}
-
-			// Constant default value
-			switch sv := x.AConst.Val.(type) {
-			case *pg_query.A_Const_Sval:
-				{
-					//fmt.Println(sv.Sval.Sval)
-				}
-			case *pg_query.A_Const_Boolval:
-				{
-					//fmt.Println(sv.Boolval.Boolval)
-				}
-			case *pg_query.A_Const_Ival:
-				{
-					//fmt.Println(sv.Ival.Ival)
-				}
-			case *pg_query.A_Const_Fval:
-				{
-					//fmt.Println(sv.Fval.Fval)
-				}
-			case *pg_query.A_Const_Bsval:
-				{
-					//fmt.Println(sv.Bsval.Bsval)
-				}
-			default:
-				{
-					_ = sv
-				}
-			}
+			return c.ConstantAsString(x.AConst)
 		}
 	}
 
-	return nil
+	return "", nil
+}
+
+func (c *Compiler) ConstantAsString(aConst *pg_query.A_Const) (string, error) {
+
+	if aConst.Isnull {
+		return "NULL", nil
+	}
+
+	// Constant default value
+	switch sv := aConst.Val.(type) {
+	case *pg_query.A_Const_Sval:
+		{
+			// string value
+			return fmt.Sprintf("\"%s\"", sv.Sval.Sval), nil
+		}
+	case *pg_query.A_Const_Boolval:
+		{
+			// bool val
+			return strconv.FormatBool(sv.Boolval.Boolval), nil
+		}
+	case *pg_query.A_Const_Ival:
+		{
+			return strconv.FormatInt(int64(sv.Ival.Ival), 10), nil
+		}
+	case *pg_query.A_Const_Fval:
+		{
+			return sv.Fval.Fval, nil
+		}
+	case *pg_query.A_Const_Bsval:
+		{
+
+			return sv.Bsval.Bsval, nil
+		}
+	default:
+		{
+			return "", fmt.Errorf("unknown how to parse constant %s", aConst)
+		}
+	}
 }
 
 func (c *Compiler) SchemaOrSearchPath(schema string) string {

@@ -123,6 +123,7 @@ type ColumnAttributes struct {
 	Pkey               bool
 	HasSequence        bool
 	HasExplicitDefault bool
+	ColumnDefault      string
 	//ColumnDefault *pg_query.Node // TODO: parse to native type
 	// Other values include: char max length for varchar,
 	// decimal and timezone precision, etc...
