@@ -64,39 +64,39 @@ var (
 	UUID         = &PostgresType{Name: "uuid", SimpleMatches: []string{"uuid"}, Description: "universally unique identifier"}
 	XML          = &PostgresType{Name: "xml", SimpleMatches: []string{"xml"}, Description: "XML data"}
 
-	Bit        = &PostgresType{Name: "bit [ (n) ]", PatternMatches: []*regexp.Regexp{regexp.MustCompile("^bit" + optionally(numInBrackets) + "$")}, Description: "fixed-length bit string"}
-	BitVarying = &PostgresType{Name: "bit varying [ (n) ]", Aliases: "varbit [ (n) ]", PatternMatches: []*regexp.Regexp{
+	Bit        = &PostgresType{Name: "bit", PatternMatches: []*regexp.Regexp{regexp.MustCompile("^bit" + optionally(numInBrackets) + "$")}, Description: "fixed-length bit string"}
+	BitVarying = &PostgresType{Name: "bit varying", Aliases: "varbit", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^bit varying" + optionally(numInBrackets) + "$"),
 		regexp.MustCompile("^varbit" + optionally(numInBrackets) + "$"),
 	}, Description: "variable-length bit string"}
-	Character = &PostgresType{Name: "character [ (n) ]", Aliases: "char [ (n) ]", PatternMatches: []*regexp.Regexp{
+	Character = &PostgresType{Name: "character", Aliases: "char", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^character" + optionally(numInBrackets) + "$"),
 		regexp.MustCompile("^char" + optionally(numInBrackets) + "$"),
 	}, Description: "fixed-length character string"}
-	CharacterVarying = &PostgresType{Name: "character varying [ (n) ]", Aliases: "varchar [ (n) ]", PatternMatches: []*regexp.Regexp{
+	CharacterVarying = &PostgresType{Name: "character varying", Aliases: "varchar", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^character varying" + optionally(numInBrackets) + "$"),
 		regexp.MustCompile("^varchar" + optionally(numInBrackets) + "$"),
 	}, Description: "variable-length character string"}
-	Interval = &PostgresType{Name: "interval [ fields ] [ (p) ]", PatternMatches: []*regexp.Regexp{
+	Interval = &PostgresType{Name: "interval", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^interval" + interval + optionally(numInBrackets) + "$"),
 	}, Description: "time span"}
-	Numeric = &PostgresType{Name: "numeric [ (p, s) ]", Aliases: "decimal [ (p, s) ]", PatternMatches: []*regexp.Regexp{
+	Numeric = &PostgresType{Name: "numeric", Aliases: "decimal", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^numeric" + optionally(twoNumsInBrackets) + "$"),
 		regexp.MustCompile("^decimal" + optionally(numInBrackets) + "$"),
 	}, Description: "exact numeric of selectable precision"}
-	Time = &PostgresType{Name: "time [ (p) ] [ without time zone ]", PatternMatches: []*regexp.Regexp{
+	Time = &PostgresType{Name: "time", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^time" + optionally(numInBrackets) + optionally(withoutTimeZone) + "$"),
 	}, Description: "time of day (no time zone)"}
-	Timetz = &PostgresType{Name: "time [ (p) ] with time zone", Aliases: "timetz", PatternMatches: []*regexp.Regexp{
+	Timetz = &PostgresType{Name: "timetz", Aliases: "timetz", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^time" + optionally(numInBrackets) + withTimeZone + "$"),
 		regexp.MustCompile("^timetz" + optionally(numInBrackets) + "$"),
 	}, Description: "time of day, including time zone"}
-	Timestamp = &PostgresType{Name: "timestamp [ (p) ] [ without time zone ]", PatternMatches: []*regexp.Regexp{
+	Timestamp = &PostgresType{Name: "timestamp", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^timestamp" + optionally(numInBrackets) + optionally(withoutTimeZone) + "$"),
 	},
 		SimpleMatches: []string{"timestamp"},
 		Description:   "date and time (no time zone)"}
-	Timestamptz = &PostgresType{Name: "timestamp [ (p) ] with time zone", Aliases: "timestamptz", PatternMatches: []*regexp.Regexp{
+	Timestamptz = &PostgresType{Name: "timestamptz", Aliases: "timestamptz", PatternMatches: []*regexp.Regexp{
 		regexp.MustCompile("^timestamp" + optionally(numInBrackets) + withTimeZone + "$"),
 		regexp.MustCompile("^timestamptz" + optionally(numInBrackets) + "$"),
 	},
