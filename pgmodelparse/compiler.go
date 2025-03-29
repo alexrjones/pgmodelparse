@@ -201,6 +201,13 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 					return err
 				}
 			}
+		case pg_query.AlterTableType_AT_AlterColumnType:
+			{
+				err = c.AlterColumnType(tab, atc.AlterTableCmd.Name, atc.AlterTableCmd.Def.Node.(*pg_query.Node_ColumnDef).ColumnDef)
+				if err != nil {
+					return err
+				}
+			}
 		case pg_query.AlterTableType_AT_AddConstraint:
 			{
 				conDef, ok := atc.AlterTableCmd.Def.Node.(*pg_query.Node_Constraint)
@@ -214,7 +221,12 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 			}
 		case pg_query.AlterTableType_AT_ColumnDefault:
 			{
-
+				if atc.AlterTableCmd.Def == nil {
+					err = c.AlterColumnDropDefault(tab, atc.AlterTableCmd.Name)
+					if err != nil {
+						return err
+					}
+				}
 			}
 		case pg_query.AlterTableType_AT_DropConstraint:
 			{
@@ -249,11 +261,12 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 	name := def.Colname
 	pgType := c.TypeFromNode(def.TypeName)
+	seqName := c.DetermineAutomaticSequenceName(t.Name, name, pgType)
 	err := t.AddColumn(&Column{
 		Table: t,
 		Name:  name,
 		Type:  pgType,
-		Attrs: &ColumnAttributes{HasSequence: pgType.IsSerial},
+		Attrs: &ColumnAttributes{HasSequence: pgType.IsSerial, SequenceName: seqName},
 	})
 	if err != nil {
 		return err
@@ -261,6 +274,38 @@ func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 	err = c.DefineConstraints(t, name, def.Constraints)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+func (c *Compiler) DetermineAutomaticSequenceName(tabName, colName string, typ *PostgresType) string {
+
+	if !typ.IsSerial {
+		return ""
+	}
+	return strings.Join([]string{tabName, colName, "seq"}, "_")
+}
+
+func (c *Compiler) AlterColumnDropDefault(t *Table, colName string) error {
+
+	v, ok := t.Columns.Get(colName)
+	if !ok {
+		return fmt.Errorf("column %s not found on table %s", colName, t.FQName())
+	}
+	if !(v.Attrs.HasSequence || v.Attrs.HasExplicitDefault) {
+		return fmt.Errorf("column %s on table %s does not have a default to drop", colName, t.FQName())
+	}
+	if v.Attrs.HasSequence {
+		v.Attrs.HasSequence = false
+		v.Attrs.SequenceName = ""
+		if v.Type.IsSerial {
+			v.Type = v.Type.NonSerialType
+		}
+		return nil
+	}
+	if v.Attrs.HasExplicitDefault {
+		v.Attrs.HasExplicitDefault = false
+		v.Attrs.ColumnDefault = ""
 	}
 	return nil
 }
@@ -289,6 +334,19 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 	}
 	c.Catalog.PgConstraint.ByColumn.Remove(col)
 	t.Columns.Remove(col.Name)
+	return nil
+}
+
+func (c *Compiler) AlterColumnType(t *Table, colName string, def *pg_query.ColumnDef) error {
+	col, ok := t.Columns.Get(colName)
+	if !ok {
+		return fmt.Errorf("column %s not found on table %s", colName, t.FQName())
+	}
+	newType := c.TypeFromNode(def.TypeName)
+	if !CanCast(col.Type, newType) {
+		return fmt.Errorf("can't alter column type: can't cast from type %s to type %s (or not implemented)", col.Type.Name, newType.Name)
+	}
+	col.Type = newType
 	return nil
 }
 

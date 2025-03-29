@@ -168,6 +168,37 @@ func TestCompiler_CreateTable_ForeignKey(t *testing.T) {
 	})
 }
 
+func TestCompiler_CreateTable_MultiColumnForeignKey(t *testing.T) {
+	const sql = `
+	CREATE TABLE base (
+		id bigserial primary key,
+		val text not null
+	);
+	
+	CREATE TABLE referrer (
+		id bigint primary key,
+		val text not null,
+		CONSTRAINT fk_base_id_val FOREIGN KEY (id, val) REFERENCES base (id, val)
+	);
+	`
+
+	c := assertParse(t, sql)
+	base := assertTable(t, c, "base")
+	baseId := assertColumn(t, base, "id", Bigserial, ColumnAttributes{Pkey: true})
+
+	tab := assertTable(t, c, "referrer")
+	refersId := assertColumn(t, tab, "id", Bigint, ColumnAttributes{})
+	assertConstraints(t, c, refersId, Constraint{
+		Table:         tab,
+		Name:          "referrer_id_fkey",
+		Type:          ConstraintTypeForeignKey,
+		RefersTable:   base,
+		Refers:        Columns{baseId},
+		Constrains:    Columns{refersId},
+		DropBehaviour: DropBehaviourRestrict,
+	})
+}
+
 func TestCompiler_MultiColumnUniqueConstraint(t *testing.T) {
 	const multiColumnUniqueConstraint = `
 	CREATE TABLE unique_constrained (
@@ -298,6 +329,52 @@ CREATE TABLE defaulters (
 
 func TestCompiler_DefaultVariants(t *testing.T) {
 	assertParse(t, defaultVariants)
+}
+
+func TestCompiler_AlterTable_DropDefaultSequence(t *testing.T) {
+	const test = `CREATE TABLE seqtest (
+    	id BIGSERIAL PRIMARY KEY 
+    );
+
+	ALTER TABLE seqtest ALTER COLUMN id DROP DEFAULT;
+`
+
+	c := assertParse(t, test)
+	tab := assertTable(t, c, "seqtest")
+	idCol, ok := tab.Columns.Get("id")
+	assert.True(t, ok)
+	assert.Equal(t, idCol.Type, Bigint)
+	assert.False(t, idCol.Attrs.HasSequence)
+	assert.Equal(t, idCol.Attrs.SequenceName, "")
+}
+
+func TestCompiler_AlterTable_AlterColumn_ChangeType(t *testing.T) {
+	const test = `CREATE TABLE seqtest (
+    	id BIGINT PRIMARY KEY 
+    );
+
+	ALTER TABLE seqtest ALTER COLUMN id TYPE INT;
+`
+
+	c := assertParse(t, test)
+	tab := assertTable(t, c, "seqtest")
+	idCol, ok := tab.Columns.Get("id")
+	assert.True(t, ok)
+	assert.Equal(t, idCol.Type, Integer)
+}
+
+func TestCompiler_AlterTable_AddDefault(t *testing.T) {
+	const test = `CREATE TABLE seqtest (
+    	id BIGSERIAL PRIMARY KEY,
+    	txt TEXT NOT NULL
+    );
+
+	ALTER TABLE seqtest ALTER COLUMN txt SET DEFAULT '';
+`
+
+	c := assertParse(t, test)
+	_ = c
+	// TODO
 }
 
 // TODO:

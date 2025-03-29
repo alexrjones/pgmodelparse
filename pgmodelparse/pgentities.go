@@ -122,6 +122,7 @@ type ColumnAttributes struct {
 	NotNull            bool
 	Pkey               bool
 	HasSequence        bool
+	SequenceName       string
 	HasExplicitDefault bool
 	ColumnDefault      string
 	//ColumnDefault *pg_query.Node // TODO: parse to native type

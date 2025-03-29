@@ -12,8 +12,33 @@ type PostgresType struct {
 	Aliases        string
 	Description    string
 	IsSerial       bool
+	NonSerialType  *PostgresType
 	SimpleMatches  []string
 	PatternMatches []*regexp.Regexp
+}
+
+var validCasts = map[*PostgresType][]*PostgresType{
+	Bigint:      {Bigint, Bigserial, Integer, Serial, Smallint, Smallserial},
+	Bigserial:   {Bigint, Bigserial, Integer, Serial, Smallint, Smallserial},
+	Integer:     {Bigint, Bigserial, Integer, Serial, Smallint, Smallserial},
+	Serial:      {Bigint, Bigserial, Integer, Serial, Smallint, Smallserial},
+	Smallint:    {Bigint, Bigserial, Integer, Serial, Smallint, Smallserial},
+	Smallserial: {Bigint, Bigserial, Integer, Serial, Smallint, Smallserial},
+	Text:        {Bytea},
+	Bytea:       {Text},
+}
+
+func CanCast(from, to *PostgresType) bool {
+	casts, ok := validCasts[from]
+	if !ok {
+		return false
+	}
+	for _, cast := range casts {
+		if cast == to {
+			return true
+		}
+	}
+	return false
 }
 
 func optionally(re string) string {
@@ -31,7 +56,7 @@ var interval = "\\s*\\s*(?:" + intervalsRe + ")\\s*"
 
 var (
 	Bigint       = &PostgresType{Name: "bigint", Aliases: "int8", SimpleMatches: []string{"bigint", "int8"}, Description: "signed eight-byte integer"}
-	Bigserial    = &PostgresType{Name: "bigserial", Aliases: "serial8", SimpleMatches: []string{"bigserial", "serial8"}, Description: "autoincrementing eight-byte integer", IsSerial: true}
+	Bigserial    = &PostgresType{Name: "bigserial", Aliases: "serial8", SimpleMatches: []string{"bigserial", "serial8"}, Description: "autoincrementing eight-byte integer", IsSerial: true, NonSerialType: Bigint}
 	Boolean      = &PostgresType{Name: "boolean", Aliases: "bool", SimpleMatches: []string{"boolean", "bool"}, Description: "logical Boolean (true/false)"}
 	Box          = &PostgresType{Name: "box", SimpleMatches: []string{"box"}, Description: "rectangular box on a plane"}
 	Bytea        = &PostgresType{Name: "bytea", SimpleMatches: []string{"bytea"}, Description: "binary data (“byte array”)"}
@@ -55,8 +80,8 @@ var (
 	Polygon      = &PostgresType{Name: "polygon", SimpleMatches: []string{"polygon"}, Description: "closed geometric path on a plane"}
 	Real         = &PostgresType{Name: "real", Aliases: "float4", SimpleMatches: []string{"real", "float4"}, Description: "single precision floating-point number (4 bytes)"}
 	Smallint     = &PostgresType{Name: "smallint", Aliases: "int2", SimpleMatches: []string{"smallint", "int2"}, Description: "signed two-byte integer"}
-	Smallserial  = &PostgresType{Name: "smallserial", Aliases: "serial2", SimpleMatches: []string{"smallserial", "serial2"}, Description: "autoincrementing two-byte integer", IsSerial: true}
-	Serial       = &PostgresType{Name: "serial", Aliases: "serial4", SimpleMatches: []string{"serial", "serial4"}, Description: "autoincrementing four-byte integer", IsSerial: true}
+	Smallserial  = &PostgresType{Name: "smallserial", Aliases: "serial2", SimpleMatches: []string{"smallserial", "serial2"}, Description: "autoincrementing two-byte integer", IsSerial: true, NonSerialType: Smallint}
+	Serial       = &PostgresType{Name: "serial", Aliases: "serial4", SimpleMatches: []string{"serial", "serial4"}, Description: "autoincrementing four-byte integer", IsSerial: true, NonSerialType: Integer}
 	Text         = &PostgresType{Name: "text", SimpleMatches: []string{"text"}, Description: "variable-length character string"}
 	TSQuery      = &PostgresType{Name: "tsquery", SimpleMatches: []string{"tsquery"}, Description: "text search query"}
 	TSVector     = &PostgresType{Name: "tsvector", SimpleMatches: []string{"tsvector"}, Description: "text search document"}
