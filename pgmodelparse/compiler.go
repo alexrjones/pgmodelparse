@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/alexrjones/pgmodelparse/collections"
-	pg_query "github.com/pganalyze/pg_query_go/v5"
+	pg_query "github.com/pganalyze/pg_query_go/v6"
 )
 
 type Compiler struct {

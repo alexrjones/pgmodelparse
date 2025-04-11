@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	pg_query "github.com/pganalyze/pg_query_go/v5"
+	pg_query "github.com/pganalyze/pg_query_go/v6"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,7 +95,11 @@ func TestCompiler_CreateTable(t *testing.T) {
 
 	table := assertTable(t, c, "users")
 	{
-		col := assertColumn(t, table, "id", Serial, ColumnAttributes{Pkey: true})
+		col := assertColumn(t, table, "id", Serial, ColumnAttributes{
+			Pkey:         true,
+			HasSequence:  true,
+			SequenceName: "users_id_seq",
+		})
 		assertConstraints(t, c, col, Constraint{
 			Table:      table,
 			Name:       "users_pkey",
@@ -117,7 +121,7 @@ func TestCompiler_CreateTable(t *testing.T) {
 		assertConstraints(t, c, col)
 	}
 	{
-		col := assertColumn(t, table, "created_at", Timestamp, ColumnAttributes{})
+		col := assertColumn(t, table, "created_at", Timestamp, ColumnAttributes{HasExplicitDefault: true, ColumnDefault: "CURRENT_TIMESTAMP"})
 		assertConstraints(t, c, col)
 	}
 }
@@ -153,7 +157,7 @@ func TestCompiler_CreateTable_ForeignKey(t *testing.T) {
 
 	c := assertParse(t, sql)
 	base := assertTable(t, c, "base")
-	baseId := assertColumn(t, base, "id", Bigserial, ColumnAttributes{Pkey: true})
+	baseId := assertColumn(t, base, "id", Bigserial, ColumnAttributes{Pkey: true, HasSequence: true, SequenceName: "base_id_seq"})
 
 	tab := assertTable(t, c, "referrer")
 	refersId := assertColumn(t, tab, "id", Bigint, ColumnAttributes{})
@@ -184,17 +188,19 @@ func TestCompiler_CreateTable_MultiColumnForeignKey(t *testing.T) {
 
 	c := assertParse(t, sql)
 	base := assertTable(t, c, "base")
-	baseId := assertColumn(t, base, "id", Bigserial, ColumnAttributes{Pkey: true})
+	baseId := assertColumn(t, base, "id", Bigserial, ColumnAttributes{Pkey: true, HasSequence: true, SequenceName: "base_id_seq"})
+	baseVal := assertColumn(t, base, "val", Text, ColumnAttributes{NotNull: true})
 
 	tab := assertTable(t, c, "referrer")
-	refersId := assertColumn(t, tab, "id", Bigint, ColumnAttributes{})
-	assertConstraints(t, c, refersId, Constraint{
+	refersId := assertColumn(t, tab, "id", Bigint, ColumnAttributes{Pkey: true})
+	refersVal := assertColumn(t, tab, "val", Text, ColumnAttributes{NotNull: true})
+	assertConstraints(t, c, refersVal, Constraint{
 		Table:         tab,
-		Name:          "referrer_id_fkey",
+		Name:          "fk_base_id_val",
 		Type:          ConstraintTypeForeignKey,
 		RefersTable:   base,
-		Refers:        Columns{baseId},
-		Constrains:    Columns{refersId},
+		Refers:        Columns{baseId, baseVal},
+		Constrains:    Columns{refersId, refersVal},
 		DropBehaviour: DropBehaviourRestrict,
 	})
 }
@@ -260,7 +266,7 @@ func TestCompiler_AlterTable_AddConstraint_ForeignKey(t *testing.T) {
 
 	c := assertParse(t, sql)
 	base := assertTable(t, c, "base")
-	baseId := assertColumn(t, base, "id", Bigserial, ColumnAttributes{Pkey: true})
+	baseId := assertColumn(t, base, "id", Bigserial, ColumnAttributes{Pkey: true, HasSequence: true, SequenceName: "base_id_seq"})
 
 	tab := assertTable(t, c, "referrer")
 	refersId := assertColumn(t, tab, "id", Bigint, ColumnAttributes{})

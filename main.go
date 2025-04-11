@@ -8,7 +8,7 @@ import (
 
 	"github.com/alexrjones/pgmodelparse/pgmodelparse"
 	"github.com/davecgh/go-spew/spew"
-	pg_query "github.com/pganalyze/pg_query_go/v5"
+	pg_query "github.com/pganalyze/pg_query_go/v6"
 	"github.com/rs/zerolog/log"
 )
 
