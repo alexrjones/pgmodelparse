@@ -236,7 +236,6 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 					return fmt.Errorf("while dropping constraint: constraint %s not found", fqname)
 				}
 				c.Catalog.PgConstraint.RemoveConstraint(cons)
-				return nil
 			}
 		case pg_query.AlterTableType_AT_DropNotNull:
 			{
@@ -251,7 +250,6 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 					return fmt.Errorf("can't drop not null constraint from nullable column %s.%s", tab.Name, col.Name)
 				}
 				col.Attrs.NotNull = false
-				return nil
 			}
 		}
 	}
