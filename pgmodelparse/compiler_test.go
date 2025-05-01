@@ -383,6 +383,24 @@ func TestCompiler_AlterTable_AddDefault(t *testing.T) {
 	// TODO
 }
 
+func TestCompiler_AlterTable_ChangePk(t *testing.T) {
+	const test = `CREATE TABLE seqtest (
+    	id1 INT NOT NULL,
+    	id2 INT NOT NULL,
+    	PRIMARY KEY (id1, id2)
+    );
+
+	ALTER TABLE seqtest
+		ADD COLUMN id3 INT NOT NULL,
+		DROP COLUMN id2,
+		ADD PRIMARY KEY (id1, id3);
+`
+
+	c := assertParse(t, test)
+	_ = c
+	// TODO
+}
+
 // TODO:
 // CREATE TABLE (... PRIMARY KEY(col1, col2) ...)
 // CREATE TABLE (... col int null ...)

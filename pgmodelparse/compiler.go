@@ -323,10 +323,10 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 			if behavior != pg_query.DropBehavior_DROP_CASCADE {
 				return fmt.Errorf("can't drop %s because %s depends on it", col.Name, con.Name)
 			}
-			funcs = append(funcs, func() {
-				c.Catalog.PgConstraint.RemoveConstraint(con)
-			})
 		}
+		funcs = append(funcs, func() {
+			c.Catalog.PgConstraint.RemoveConstraint(con)
+		})
 	}
 
 	for _, fn := range funcs {
