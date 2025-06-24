@@ -262,6 +262,14 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 				}
 				col.Attrs.NotNull = false
 			}
+		case pg_query.AlterTableType_AT_SetNotNull:
+			{
+				col, err := ColumnFromColName(tab, atc.AlterTableCmd.Name)
+				if err != nil {
+					return err
+				}
+				col.Attrs.NotNull = true
+			}
 		}
 	}
 	return nil
