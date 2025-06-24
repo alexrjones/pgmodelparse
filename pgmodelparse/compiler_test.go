@@ -32,8 +32,6 @@ func assertParseError(t *testing.T, stmts string, messageContains ...string) {
 }
 
 func assertTable(t *testing.T, c *Compiler, path string) *Table {
-	t.Helper()
-
 	schemaName := c.SearchPath
 	tableName := path
 	split := strings.Split(path, ".")
@@ -49,8 +47,6 @@ func assertTable(t *testing.T, c *Compiler, path string) *Table {
 }
 
 func assertColumn(t *testing.T, tab *Table, name string, pgtype *PostgresType, attrs ColumnAttributes) *Column {
-	t.Helper()
-
 	col, ok := tab.Columns.Get(name)
 	require.True(t, ok)
 	assert.Equal(t, col.Type, pgtype)
@@ -59,8 +55,6 @@ func assertColumn(t *testing.T, tab *Table, name string, pgtype *PostgresType, a
 }
 
 func assertConstraints(t *testing.T, c *Compiler, col *Column, cons ...Constraint) {
-	t.Helper()
-
 	actualCons, ok := c.Catalog.PgConstraint.ByColumn.Get(col)
 	if len(cons) == 0 {
 		assert.Len(t, actualCons, 0, "expected 0 constraints, but got %d", len(actualCons))
@@ -399,6 +393,36 @@ func TestCompiler_AlterTable_ChangePk(t *testing.T) {
 	c := assertParse(t, test)
 	_ = c
 	// TODO
+}
+
+func TestCompiler_AlterTable_RenameTo(t *testing.T) {
+	const test = `CREATE TABLE test (
+    	id INT NOT NULL,
+    	PRIMARY KEY (id)
+    );
+
+	CREATE TABLE referring (
+	    id INT NOT NULL REFERENCES test(id)
+	);
+
+	ALTER TABLE test RENAME TO test2;
+`
+
+	c := assertParse(t, test)
+	test2 := assertTable(t, c, "test2")
+	test2Col := assertColumn(t, test2, "id", Integer, ColumnAttributes{NotNull: true, Pkey: true})
+	referring := assertTable(t, c, "referring")
+
+	col := assertColumn(t, referring, "id", Integer, ColumnAttributes{NotNull: true})
+	assertConstraints(t, c, col, Constraint{
+		Table:         referring,
+		Name:          "referring_id_fkey",
+		Type:          ConstraintTypeForeignKey,
+		RefersTable:   test2,
+		Refers:        Columns{test2Col},
+		Constrains:    Columns{col},
+		DropBehaviour: DropBehaviourRestrict,
+	})
 }
 
 // TODO:

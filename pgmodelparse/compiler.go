@@ -90,6 +90,19 @@ func (c *Compiler) ParseStatements(parse *pg_query.ParseResult) error {
 					}
 				}
 			}
+		case *pg_query.Node_RenameStmt:
+			{
+				tab, err := c.FindTableFromRangeVar(p.RenameStmt.Relation)
+				if err != nil {
+					return err
+				}
+				err = c.RenameTable(tab, p.RenameStmt.Newname)
+				if err != nil {
+					return err
+				}
+			}
+		default:
+			fmt.Printf("Unknown statement type %T\n", p)
 		}
 	}
 
@@ -273,6 +286,21 @@ func (c *Compiler) DefineColumn(t *Table, def *pg_query.ColumnDef) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func (c *Compiler) RenameTable(t *Table, newName string) error {
+
+	sch, ok := c.Catalog.Schemas.Get(t.Schema)
+	if !ok {
+		return fmt.Errorf("did not find schema %s", t.Schema)
+	}
+	if _, ok = sch.Tables.Get(newName); ok {
+		return fmt.Errorf("schema %s already has table %s", t.Schema, newName)
+	}
+	sch.Tables.Remove(t.Name)
+	t.Name = newName
+	sch.Tables.Add(newName, t)
 	return nil
 }
 
