@@ -176,6 +176,16 @@ func (c Columns) SingleElementOrPanic() *Column {
 	return c[0]
 }
 
+// IsExactlyColumn returns whether the contents of this Columns
+// is exactly the specified column
+func (c Columns) IsExactlyColumn(other *Column) bool {
+
+	if len(c) != 1 {
+		return false
+	}
+	return c[0] == other
+}
+
 type Constraint struct {
 	Table       *Table
 	Name        string
@@ -190,7 +200,11 @@ type Constraint struct {
 
 func (c *Constraint) FQName() string {
 
-	return c.Table.Schema + "." + c.Name
+	return ConstraintFQName(c.Table, c.Name)
+}
+
+func ConstraintFQName(tab *Table, conname string) string {
+	return tab.FQName() + "." + conname
 }
 
 func (c *Constraint) OnCreate() {

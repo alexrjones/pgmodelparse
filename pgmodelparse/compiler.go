@@ -101,8 +101,6 @@ func (c *Compiler) ParseStatements(parse *pg_query.ParseResult) error {
 					return err
 				}
 			}
-		default:
-			fmt.Printf("Unknown statement type %T\n", p)
 		}
 	}
 
@@ -243,7 +241,7 @@ func (c *Compiler) AlterTable(stmt *pg_query.AlterTableStmt) error {
 			}
 		case pg_query.AlterTableType_AT_DropConstraint:
 			{
-				fqname := tab.Schema + "." + atc.AlterTableCmd.Name
+				fqname := ConstraintFQName(tab, atc.AlterTableCmd.Name)
 				cons, ok := c.Catalog.PgConstraint.ByName[fqname]
 				if !ok {
 					return fmt.Errorf("while dropping constraint: constraint %s not found", fqname)
@@ -346,7 +344,7 @@ func (c *Compiler) DropColumn(t *Table, colName string, behavior pg_query.DropBe
 	var funcs []func()
 	for _, con := range depends {
 		if con.DropBehaviour == DropBehaviourRestrict {
-			if behavior != pg_query.DropBehavior_DROP_CASCADE {
+			if behavior != pg_query.DropBehavior_DROP_CASCADE && !con.Constrains.IsExactlyColumn(col) {
 				return fmt.Errorf("can't drop %s because %s depends on it", col.Name, con.Name)
 			}
 		}
@@ -511,6 +509,7 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			schema := v.Pktable.Schemaname
 			table := v.Pktable.Relname
 			tableObj, err := c.FindTable(schema, table)
+			name := v.Conname
 			if err != nil {
 				return err
 			}
@@ -551,7 +550,6 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 				}
 				constrainsCols = append(constrainsCols, col)
 			}
-			name := v.Conname
 			if name == "" && len(constrainsCols) > 0 {
 				name = strings.Join([]string{t.Name, constrainsCols.JoinColumnNames("_"), "fkey"}, "_")
 			}
