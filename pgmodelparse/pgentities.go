@@ -258,6 +258,7 @@ const (
 	ConstraintTypePrimary ConstraintType = iota
 	ConstraintTypeUnique
 	ConstraintTypeForeignKey
+	ConstraintTypeIdentity
 )
 
 func (c ConstraintType) String() string {
@@ -269,6 +270,8 @@ func (c ConstraintType) String() string {
 		return "Unique"
 	case ConstraintTypeForeignKey:
 		return "Foreign Key"
+	case ConstraintTypeIdentity:
+		return "Identity"
 	}
 	panic(c)
 

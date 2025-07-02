@@ -11,8 +11,10 @@ type PostgresType struct {
 	Name           string
 	Aliases        string
 	Description    string
+	Schema         string
 	IsSerial       bool
 	NonSerialType  *PostgresType
+	EnumValues     []string
 	SimpleMatches  []string
 	PatternMatches []*regexp.Regexp
 }
@@ -129,7 +131,7 @@ var (
 		Description:   "date and time, including time zone"}
 )
 
-var pgTypes = []*PostgresType{
+var defaultPGTypes = []*PostgresType{
 	Bigint,
 	Bigserial,
 	Boolean,
@@ -173,32 +175,6 @@ var pgTypes = []*PostgresType{
 	Timetz,
 	Timestamp,
 	Timestamptz,
-}
-
-var simpleMatches = lo.Associate(lo.FlatMap(pgTypes, func(item *PostgresType, index int) []lo.Entry[string, *PostgresType] {
-	return lo.Map(item.SimpleMatches, func(m string, index int) lo.Entry[string, *PostgresType] {
-		return lo.Entry[string, *PostgresType]{Key: m, Value: item}
-	})
-}), func(item lo.Entry[string, *PostgresType]) (string, *PostgresType) {
-	return item.Key, item.Value
-})
-var patternMatches = lo.FlatMap(pgTypes, func(item *PostgresType, index int) []lo.Entry[*regexp.Regexp, *PostgresType] {
-	return lo.Map(item.PatternMatches, func(m *regexp.Regexp, index int) lo.Entry[*regexp.Regexp, *PostgresType] {
-		return lo.Entry[*regexp.Regexp, *PostgresType]{Key: m, Value: item}
-	})
-})
-
-func MatchType(s string) *PostgresType {
-	s = strings.ToLower(s)
-	if t, ok := simpleMatches[s]; ok {
-		return t
-	}
-	for _, p := range patternMatches {
-		if p.Key.MatchString(s) {
-			return p.Value
-		}
-	}
-	panic("didn't match")
 }
 
 type PostgresInterval string

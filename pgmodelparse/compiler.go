@@ -11,8 +11,9 @@ import (
 )
 
 type Compiler struct {
-	SearchPath string
-	Catalog    *Catalog
+	SearchPath   string
+	Catalog      *Catalog
+	TypeRegistry *TypeRegistry
 }
 
 func NewCompiler() *Compiler {
@@ -27,6 +28,7 @@ func NewCompiler() *Compiler {
 				ByName:     make(map[string]*Constraint),
 			},
 		},
+		TypeRegistry: NewTypeRegistry(),
 	}
 	defaultSchema := &Schema{
 		Name:   "public",
@@ -81,7 +83,7 @@ func (c *Compiler) ParseStatements(parse *pg_query.ParseResult) error {
 					{
 						for _, tgt := range p.DropStmt.Objects {
 							l := tgt.Node.(*pg_query.Node_List)
-							schema, table := TableNameFromNodeList(l.List)
+							schema, table := ObjectNameFromList(l.List)
 							err := c.DropTable(schema, table, dropBehaviour)
 							if err != nil {
 								return err
@@ -101,6 +103,15 @@ func (c *Compiler) ParseStatements(parse *pg_query.ParseResult) error {
 					return err
 				}
 			}
+		case *pg_query.Node_CreateEnumStmt:
+			{
+				err := c.CreateEnum(p.CreateEnumStmt)
+				if err != nil {
+					return err
+				}
+			}
+		default:
+			//fmt.Printf("unknown how to process type %T\n", p)
 		}
 	}
 
@@ -413,7 +424,7 @@ func (c *Compiler) TypeFromNode(tn *pg_query.TypeName) *PostgresType {
 		}
 		parts = append(parts, val)
 	}
-	return MatchType(strings.Join(parts, "."))
+	return c.TypeRegistry.MatchType(strings.Join(parts, "."))
 }
 
 func (c *Compiler) DefineConstraints(t *Table, colName string, constraints []*pg_query.Node) error {
@@ -577,13 +588,47 @@ func (c *Compiler) DefineConstraint(t *Table, colName string, v *pg_query.Constr
 			// Nothing to do? That's the default
 			return nil
 		}
-	case pg_query.ConstrType_CONSTR_CHECK:
+	case pg_query.ConstrType_CONSTR_CHECK, pg_query.ConstrType_CONSTR_ATTR_DEFERRABLE:
 		{
 			// Nothing to do for checked constraints yet
 			return nil
 		}
+	case pg_query.ConstrType_CONSTR_IDENTITY:
+		{
+			constrainsCols := make(Columns, 0, len(v.FkAttrs))
+			for _, colRef := range v.FkAttrs {
+				colName := StringOrPanic(colRef)
+				col, ok := t.Columns.Get(colName)
+				if !ok {
+					return fmt.Errorf("column %s not found", colName)
+				}
+				constrainsCols = append(constrainsCols, col)
+			}
+			if len(constrainsCols) == 0 {
+				// For syntax like:
+				// CREATE TABLE example (user_id INTEGER REFERENCES users(id));
+				// the name of the constrained column is not in the node, and is provided
+				// by the caller instead
+				col, err := ColumnFromColName(t, colName)
+				if err != nil {
+					return err
+				}
+				constrainsCols = append(constrainsCols, col)
+			}
+			name := strings.Join([]string{t.Name, constrainsCols.JoinColumnNames("_"), "identity"}, "_")
+			c.Catalog.PgConstraint.AddConstraint(&Constraint{
+				Table: t,
+				// TODO: What does postgres call it?
+				Name:          name,
+				Type:          ConstraintTypeIdentity,
+				Constrains:    constrainsCols,
+				DropBehaviour: DropBehaviourCascade,
+			})
+			return nil
+		}
+	default:
+		return fmt.Errorf("not yet able to process constraint type %v", v.Contype)
 	}
-	return fmt.Errorf("not yet able to process constraint type %v", v.Contype)
 }
 
 func (c *Compiler) FindTable(schema, table string) (*Table, error) {
@@ -708,6 +753,26 @@ func (c *Compiler) ConstantAsString(aConst *pg_query.A_Const) (string, error) {
 	}
 }
 
+func (c *Compiler) CreateEnum(ces *pg_query.CreateEnumStmt) error {
+
+	schema, name := ObjectNameFromNodeList(ces.TypeName)
+	typeName := name
+	if schema != "" {
+		typeName = schema + "." + typeName
+	}
+	vals := StringsOrPanic(ces.Vals)
+	typ := &PostgresType{
+		Name:           typeName,
+		Schema:         schema,
+		IsSerial:       false,
+		NonSerialType:  nil,
+		SimpleMatches:  []string{typeName},
+		PatternMatches: nil,
+		EnumValues:     vals,
+	}
+	return c.TypeRegistry.RegisterType(typ)
+}
+
 func (c *Compiler) SchemaOrSearchPath(schema string) string {
 	if schema == "" {
 		return c.SearchPath
@@ -715,15 +780,20 @@ func (c *Compiler) SchemaOrSearchPath(schema string) string {
 	return schema
 }
 
-func TableNameFromNodeList(l *pg_query.List) (schema string, table string) {
+func ObjectNameFromList(l *pg_query.List) (schema string, object string) {
 
-	if len(l.Items) == 1 {
-		table = StringOrPanic(l.Items[0])
+	return ObjectNameFromNodeList(l.Items)
+}
+
+func ObjectNameFromNodeList(l []*pg_query.Node) (schema string, object string) {
+
+	if len(l) == 1 {
+		object = StringOrPanic(l[0])
 		return
 	}
-	if len(l.Items) == 2 {
-		schema = StringOrPanic(l.Items[0])
-		table = StringOrPanic(l.Items[1])
+	if len(l) == 2 {
+		schema = StringOrPanic(l[0])
+		object = StringOrPanic(l[1])
 	}
 	return
 }
